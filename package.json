@@ -29,6 +29,7 @@
     "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
     "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
     "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "assert": "2.1.0",
     "buffer": "6.0.3"
   },
   "devDependencies": {
