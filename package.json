@@ -1,10 +1,10 @@
 {
   "name": "blackout-safe",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20 && npm run test:witnesses && npm run test:hardening",
+    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20 && npm run test:witnesses && npm run test:hardening && npm run test:web-encoding",
     "test:m1-5": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
     "test:m6-10": "node --experimental-strip-types src/safe/milestones-6-10.test.ts",
     "test:m10-15": "node --experimental-strip-types src/safe/milestones-10-15.test.ts",
@@ -12,8 +12,13 @@
     "test:m15-20": "node --experimental-strip-types src/safe/milestones-15-20.test.ts",
     "test:witnesses": "node --experimental-strip-types src/safe/midnight-witnesses.test.ts",
     "test:hardening": "node --experimental-strip-types src/safe/security-hardening.test.ts",
+    "test:web-encoding": "node --experimental-strip-types src/safe/live-encoding.test.ts",
     "typecheck": "tsc -p tsconfig.safe.json --noEmit",
-    "midnight:assets": "node scripts/copy-safe-zk-artifacts.mjs"
+    "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
+    "midnight:assets": "node scripts/copy-safe-zk-artifacts.mjs",
+    "build:web:bundle": "vite build",
+    "build": "node scripts/build-web.mjs",
+    "dev": "node scripts/build-web.mjs --prepare-only && vite"
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "0.16.0",
@@ -23,10 +28,14 @@
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
     "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
     "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
-    "@midnight-ntwrk/midnight-js-types": "4.1.1"
+    "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "assert": "2.1.0",
+    "buffer": "6.0.3"
   },
   "devDependencies": {
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vite": "6.1.0",
+    "vite-plugin-wasm": "3.6.0"
   },
   "engines": {
     "node": ">=22"
