@@ -7,6 +7,10 @@ export interface BlackoutSafeReleaseEvidence {
   lacePreviewProviderIntegrated: boolean;
   previewDeploymentTxId?: string;
   previewContractAddress?: string;
+  previewDeploymentNetworkId?: string;
+  previewDeploymentFinalized?: boolean;
+  /** Must come from a real Preview indexer/node lookup, never from local syntax checks. */
+  previewDeploymentVerifiedOnChain?: boolean;
   multiUserPreviewValidated: boolean;
   liveShieldedExecutionValidated: boolean;
   liveReceiptVerificationValidated: boolean;
@@ -51,14 +55,23 @@ export function evaluateBlackoutSafeRelease(evidence: BlackoutSafeReleaseEvidenc
     };
   }
 
-  const deployed = isHex64(evidence.previewDeploymentTxId) && isHex64(evidence.previewContractAddress);
-  if (!deployed) {
+  const identifiersPresent = isHex64(evidence.previewDeploymentTxId) && isHex64(evidence.previewContractAddress);
+  const networkVerified =
+    identifiersPresent &&
+    evidence.previewDeploymentNetworkId === 'preview' &&
+    evidence.previewDeploymentFinalized === true &&
+    evidence.previewDeploymentVerifiedOnChain === true;
+
+  if (!networkVerified) {
+    const blockers = identifiersPresent
+      ? ['PREVIEW_DEPLOYMENT_NOT_NETWORK_VERIFIED']
+      : ['PREVIEW_DEPLOYMENT_NOT_VERIFIED'];
     return {
       stage: 'PREVIEW_READY',
       readyForPreviewDeploy: true,
       deployedOnPreview: false,
       readyForProduction: false,
-      blockers: ['PREVIEW_DEPLOYMENT_NOT_VERIFIED'],
+      blockers,
     };
   }
 
