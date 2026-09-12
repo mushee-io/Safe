@@ -99,4 +99,4 @@ await test('M15 treasury proposal state also exposes only commitment-bound publi
 });
 
 console.log(`\nBLACKOUT SAFE PROPOSAL PRIVACY TESTS: ${pass} PASS / ${fail} FAIL`);
-if (fail > 0) process.exitCode = 1;
+if (fail > 0) throw new Error(`${fail} proposal privacy test(s) failed`);
