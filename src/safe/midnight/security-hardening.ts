@@ -5,9 +5,29 @@ export function isHex64(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 }
 
-export function assertNetworkIdentifier(value: unknown, label: string): string {
-  if (!isHex64(value)) throw new Error(`${label}_MUST_BE_64_HEX`);
-  return value.toLowerCase();
+function normalizedHexIdentifier(value: unknown, stripContractPrefix: boolean): string {
+  if (typeof value !== 'string') return '';
+  let normalized = value.trim().toLowerCase().replace(/^0x/, '');
+  if (stripContractPrefix) normalized = normalized.replace(/^0200/, '');
+  return normalized;
+}
+
+/** Canonical Midnight transaction identifier: raw 32-byte lower-case hex. */
+export function assertTransactionId(value: unknown, label: string): string {
+  const normalized = normalizedHexIdentifier(value, false);
+  if (!isHex64(normalized)) throw new Error(`${label}_MUST_BE_64_HEX`);
+  return normalized;
+}
+
+/**
+ * Canonical Midnight contract address: raw 32-byte lower-case hex. Midnight
+ * tooling may surface the same address as `0x...` or with an `0200` prefix;
+ * those recognized encodings are normalized before validation.
+ */
+export function assertContractAddress(value: unknown, label: string): string {
+  const normalized = normalizedHexIdentifier(value, true);
+  if (!isHex64(normalized)) throw new Error(`${label}_MUST_BE_64_HEX`);
+  return normalized;
 }
 
 export function assertSafeEndpointUri(value: string | undefined, kind: 'HTTP' | 'WS'): string {
