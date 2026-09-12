@@ -4,28 +4,38 @@
 
 > Prove the treasury action is authorized. Reveal nothing else that does not need to be revealed.
 
-This repository contains the Milestones 1–5 protocol core for BLACKOUT SAFE:
+BLACKOUT SAFE is not a dark-mode clone of Safe/Gnosis. It is a confidential treasury protocol whose authorization, policy and execution rules are designed around Midnight zero-knowledge and shielded-token primitives.
 
-- private membership commitments and Merkle membership proofs
-- anonymous signer authorization model
-- proposal-scoped nullifiers and duplicate-approval protection
-- private proposal commitments and client-side integrity verification
-- current-membership epoch binding to reject stale member proofs
-- 2-of-3 quorum reference engine and fail-closed proposal transport abstraction
-- Midnight Compact contract draft targeting the existing Blackout compatibility stack
-- architecture, privacy, threat-model, audit, and test documentation
+## Implemented protocol slice — Milestones 1–10
 
-## Status
+- private membership commitments and Merkle proofs
+- anonymous signer authorization
+- proposal-scoped nullifiers
+- private proposal commitments
+- stale membership/policy epoch rejection
+- programmable policy baseline: threshold, transfer ceiling, proposal lifetime, execution delay
+- explicit zero-identity quorum statement
+- `STANDARD` policy mode
+- `PRIVATE_POLICY` committed threshold/limits mode
+- proposal nonce replay protection
+- execution nullifiers and double-execution protection
+- policy/expiry/delay/quorum execution state machine
+- fail-closed shielded treasury adapter boundary
+- Compact shielded custody source using `receiveShielded`, witness-supplied `QualifiedShieldedCoinInfo`, and `sendShielded`
 
-Local reference protocol tests: **19 PASS / 0 FAIL**.
+## Verification status
 
-The Compact source has **not yet been compiled in the isolated build environment**, because the existing Blackout repository's pinned `bin/compact` could not be materialized there. Generated Safe ZK artifacts, Lace Safe transactions, and Midnight Preview deployment are therefore not claimed as complete.
+Protocol/security reference suites: **36 PASS / 0 FAIL** total — 19 Milestones 1–5 tests plus 17 Milestones 6–10 tests.
 
-See [`BUILD_STATUS.md`](./BUILD_STATUS.md) for the exact truth table.
+Strict TypeScript typecheck: **PASS**.
+
+Compact source: **NOT YET COMPILE-VERIFIED** in this isolated build runtime. Generated Safe ZK assets and real Preview/Lace shielded treasury transactions are not claimed complete.
+
+See [`BUILD_STATUS.md`](./BUILD_STATUS.md) and [`docs/blackout-safe-milestones-6-10.md`](./docs/blackout-safe-milestones-6-10.md).
 
 ## Local reference tests
 
-Requires Node.js 22+.
+Requires Node.js 22+ and TypeScript 5.8+.
 
 ```bash
 npm install
@@ -33,28 +43,32 @@ npm test
 npm run typecheck
 ```
 
-The test runner uses Node's TypeScript type-stripping support for the dependency-free protocol reference core.
-
 ## Layout
 
 ```text
 contract/blackout_safe.compact
 src/safe/
+  crypto.ts
+  model.ts
+  policy-engine.ts
+  proposal-integrity.ts
+  reference-engine.ts
+  treasury.ts
+  blackout-safe.test.ts
+  milestones-6-10.test.ts
 docs/
 BUILD_STATUS.md
 ```
 
 ## Compatibility target
 
-The active Blackout application path inspected during the audit uses:
+The active Blackout stack audited before starting Safe uses:
 
-- Compact compiler: `0.31.1`
-- Compact language: `0.23.0`
-- Compact runtime: `0.16.0`
-- Midnight.js: `4.1.1`
-
-A separate stale/duplicate artifact path reports newer versions. BLACKOUT SAFE deliberately targets the active Blackout path until the whole application is upgraded and rebuilt together.
+- Compact compiler `0.31.1`
+- Compact language `0.23.0`
+- Compact runtime `0.16.0`
+- Midnight.js `4.1.1`
 
 ## Security rule
 
-No LIVE success fallback. No fake approvals. No fake deployment. No hardcoded PASS. Any unavailable cryptographic or network dependency must fail closed.
+No LIVE success fallback. No fake approval. No fake deployment. No pretend balance. No hard-coded PASS. Missing wallet/proof/private-state/treasury dependencies must fail closed.

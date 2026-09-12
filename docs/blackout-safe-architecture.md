@@ -1,56 +1,82 @@
-# BLACKOUT SAFE — Architecture (Milestones 1–5)
+# BLACKOUT SAFE — Architecture (Milestones 1–10)
 
 ## Product boundary
-BLACKOUT SAFE proves that a treasury action was authorized while minimizing disclosure of membership, signer identity, and proposal contents.
+BLACKOUT SAFE proves that a treasury action was authorized and policy-compliant while minimizing disclosure of membership, signer identity, proposal contents, and treasury metadata.
 
-## Current implementation slice
-This slice implements the protocol model for:
+## Implemented reference slice
 1. Safe public/private state separation.
 2. Private membership via Merkle membership proofs.
 3. Anonymous proposal approval.
 4. Proposal-scoped nullifiers and duplicate-approval rejection.
 5. Private proposal payload commitments.
+6. Committed programmable policy baseline.
+7. Explicit zero-identity quorum statement.
+8. STANDARD and PRIVATE_POLICY threshold modes.
+9. Replay-safe execution state machine.
+10. Shielded contract-custody boundary using Midnight token primitives in the Compact draft.
 
-Execution, shielded asset movement, recovery, membership rotation circuits, private-policy mode, selective receipts, and Blackout Verify integration remain later milestones.
+Recovery, governed membership/policy rotation circuits, selective BLACKOUT RECEIPTS, Blackout Verify integration, full frontend, encrypted multi-member private-state synchronization, generated Safe proving assets, and real Preview deployment remain later milestones.
 
 ## Public state
-- `safe_id`: stable domain identifier.
+- `safe_id`.
 - active membership Merkle root/tree state.
-- `membership_version`: invalidates stale credentials/proposals after governance changes.
+- `membership_version`.
 - `policy_commitment` and `policy_version`.
-- `required_quorum` in STANDARD policy mode.
-- proposal commitments and public lifecycle state.
+- `policy_is_private`.
+- STANDARD threshold only; PRIVATE_POLICY stores zero instead of the threshold.
+- proposal commitments and lifecycle state.
 - proposal-scoped approval nullifiers.
+- Safe-scoped proposal nonce nullifiers.
+- execution nullifiers.
 - aggregate approval count.
 - paused/active state.
 
-These values are required for consensus, replay/double-approval resistance, or public verification.
+These values are required for consensus, replay/double-approval resistance, state-machine enforcement, or public verification.
 
 ## Private local state / witnesses
 - raw member secret.
 - member commitment opening.
 - Merkle authentication path.
+- private policy opening and salt.
 - proposal payload: action, asset, recipient, amount, call/action data, memo, timestamps, nonce, salt.
-- any future decryption keys or encrypted proposal distribution metadata.
+- qualified held shielded coin openings.
+- future decryption keys/encrypted proposal and treasury-state distribution metadata.
 
-None of these values should be persisted into public contract state, analytics, URLs, or logs.
+None of these values should be persisted into normal public contract state, analytics, URLs, or logs.
 
 ## Membership model
 `memberCommitment = H(domain_member, memberSecret)`.
 
-Authorized members prove in ZK that this commitment is a leaf of the active Merkle tree. The approval path proves membership without publishing the leaf being proven.
+Authorized members prove that this commitment belongs to the active Merkle tree without publishing a stable signer identity.
 
-The active authorization tree is intentionally a current-root `MerkleTree`, not a historic-root authorization check. A historic root can be useful for audit, but accepting any historic root for live authorization would allow removed/stale members to continue proving old membership.
+The live authorization structure is current-root, not historic-root. Historic roots may be retained separately for audit later, but old roots are not accepted for current authorization.
 
 ## Anonymous approval model
-`nullifier = H(domain_approval, safeId, proposalCommitment, memberSecret)`.
+`approvalNullifier = H(domain_approval, safeId, proposalCommitment, memberSecret)`.
 
-The nullifier is public and unique for one member/proposal pair. It prevents one member from occupying multiple quorum slots without revealing a stable public signer identifier. Because proposal commitment is in the nullifier domain, the same member receives a different nullifier on a different proposal.
+The same signer cannot occupy two quorum slots for one proposal. Different proposals produce different nullifiers.
 
-## Private proposal model
-Only `proposalCommitment` is public. The private payload is opened to authorized clients, which must recompute the commitment before approval.
+## Proposal model
+Only `proposalCommitment` is public. Authorized clients must recompute the commitment after decrypting a proposal before approving or executing it.
 
-Any mutation to recipient, amount, action, asset, dates, nonce, memo hash, or salt changes the commitment and therefore invalidates approvals bound to the old commitment.
+A separate Safe-scoped nonce nullifier prevents the same proposal nonce from being reused under another payload.
+
+## Policy model
+`policyCommitment` binds threshold, amount ceiling, proposal lifetime ceiling, execution delay, membership version, policy version, and policy salt.
+
+STANDARD exposes threshold intentionally.
+
+PRIVATE_POLICY omits threshold from public state and suppresses per-approval quorum progression. The committed policy opening is checked inside authorization/execution logic.
+
+## Execution model
+Execution is a state transition over the already-approved commitment. The private payload is reopened and must exactly match that commitment. The policy is reopened and must exactly match `policyCommitment`. Quorum, time bounds, replay nullifiers, and treasury funds are checked before execution.
+
+Successful execution consumes an execution nullifier and closes the proposal. Failed execution must not create a successful state transition.
+
+## Shielded custody
+The Compact draft follows the contract-custody pattern with `receiveShielded`, a private `QualifiedShieldedCoinInfo` witness, and `sendShielded`. The Safe's raw coin opening is not stored in normal public ledger fields.
+
+This requires production-grade private coin-state distribution and recipient discovery. Those pieces are explicitly not treated as complete yet.
 
 ## Fail-closed rule
-Unknown proposal, wrong Safe, stale membership epoch, stale policy epoch, bad Merkle proof, member-secret mismatch, duplicate nullifier, commitment mismatch, or paused Safe must fail rather than enter a demo/success path.
+Unknown proposal, wrong Safe, stale epoch, bad Merkle proof, member-secret mismatch, duplicate approval, reused proposal nonce, policy mismatch, policy violation, insufficient quorum, early/expired execution, insufficient shielded funds, reused execution nullifier, commitment mismatch, missing LIVE treasury dependency, or paused Safe must fail rather than enter a demo/success path.

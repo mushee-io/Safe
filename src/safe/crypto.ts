@@ -1,4 +1,4 @@
-import type { Hex32, MerkleProof, PrivateProposalPayload, StandardPolicy } from './model.ts';
+import type { Hex32, MerkleProof, PrivateProposalPayload, TreasuryPolicy } from './model.ts';
 
 const encoder = new TextEncoder();
 const HEX32 = /^0x[0-9a-f]{64}$/;
@@ -44,16 +44,45 @@ export async function computeProposalNullifier(
   return domainHash('blackout:safe:approval-nullifier:v1', safeId, proposalCommitment, memberSecret);
 }
 
-export async function computePolicyCommitment(policy: StandardPolicy): Promise<Hex32> {
+export const ZERO_HEX32 = `0x${'0'.repeat(64)}` as Hex32;
+
+export async function computePolicyCommitment(policy: TreasuryPolicy): Promise<Hex32> {
   if (!Number.isInteger(policy.threshold) || policy.threshold < 1) {
     throw new Error('threshold must be a positive integer');
   }
+  const salt = policy.policySalt ?? ZERO_HEX32;
+  assertHex32(salt, 'policySalt');
+  if (policy.mode === 'PRIVATE_POLICY' && salt === ZERO_HEX32) {
+    throw new Error('private policy requires a non-zero policy salt');
+  }
   return domainHash(
-    'blackout:safe:policy:standard:v1',
+    'blackout:safe:policy:v2',
+    policy.mode,
     policy.threshold,
+    policy.maxTransferAmount ?? 'UNLIMITED',
+    policy.maxProposalLifetimeSeconds ?? 'UNLIMITED',
+    policy.minExecutionDelaySeconds ?? 0n,
     policy.membershipVersion,
     policy.policyVersion,
+    salt,
   );
+}
+
+export async function computeProposalNonceNullifier(safeId: Hex32, proposalNonce: Hex32): Promise<Hex32> {
+  assertHex32(safeId, 'safeId');
+  assertHex32(proposalNonce, 'proposalNonce');
+  return domainHash('blackout:safe:proposal-nonce:v1', safeId, proposalNonce);
+}
+
+export async function computeExecutionNullifier(
+  safeId: Hex32,
+  proposalCommitment: Hex32,
+  proposalNonce: Hex32,
+): Promise<Hex32> {
+  assertHex32(safeId, 'safeId');
+  assertHex32(proposalCommitment, 'proposalCommitment');
+  assertHex32(proposalNonce, 'proposalNonce');
+  return domainHash('blackout:safe:execution-nullifier:v1', safeId, proposalCommitment, proposalNonce);
 }
 
 export async function computeProposalCommitment(payload: PrivateProposalPayload): Promise<Hex32> {

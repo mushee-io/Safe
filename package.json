@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
+    "test": "npm run test:m1-5 && npm run test:m6-10",
+    "test:m1-5": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
+    "test:m6-10": "node --experimental-strip-types src/safe/milestones-6-10.test.ts",
     "typecheck": "tsc -p tsconfig.safe.json"
   },
   "devDependencies": {
