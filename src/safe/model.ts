@@ -2,7 +2,6 @@ export type Hex32 = `0x${string}`;
 
 export type SafeStatus = 'ACTIVE' | 'PAUSED';
 export type ProposalStatus = 'PENDING' | 'CANCELLED' | 'EXECUTED' | 'EXECUTION_UNCERTAIN';
-export type ProposalKind = 'TREASURY' | 'GOVERNANCE';
 export type ActionType = 'TRANSFER' | 'PAYROLL' | 'INVOICE' | 'CONTRACT_CALL' | 'GOVERNANCE';
 export type PolicyMode = 'STANDARD' | 'PRIVATE_POLICY';
 
@@ -66,12 +65,15 @@ export interface PublicSafeState {
   status: SafeStatus;
 }
 
+/**
+ * Public proposal state deliberately excludes the proposal category/action.
+ * TREASURY vs GOVERNANCE remains private metadata bound inside the commitment.
+ */
 export interface PublicProposalState {
   proposalCommitment: Hex32;
   membershipVersion: bigint;
   policyVersion: bigint;
   approvalCount: number;
-  kind: ProposalKind;
   status: ProposalStatus;
 }
 
@@ -105,7 +107,6 @@ export interface PublicProposalReceipt {
   proposalCommitment: Hex32;
   membershipVersion: bigint;
   policyVersion: bigint;
-  kind: ProposalKind;
   status: 'PENDING';
 }
 

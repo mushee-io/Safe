@@ -39,43 +39,28 @@ jobs:
         run: |
           chmod +x .blackout-toolchain/bin/compact
           .blackout-toolchain/bin/compact update 0.31.1
-          .blackout-toolchain/bin/compact compile --version
-          .blackout-toolchain/bin/compact compile --ledger-version
-          .blackout-toolchain/bin/compact compile --runtime-version
-      - name: Apply candidate Compact fixes
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('contract/blackout_safe.compact')
-          s = p.read_text()
-          replacements = [
-            ('  assert(blockTimeGte(disclose(payload.created_at + policy.min_execution_delay)), "BLACKOUT_SAFE_EXECUTION_DELAY");', '  const execute_after = (payload.created_at + policy.min_execution_delay) as Uint<64>;\n  assert(blockTimeGte(disclose(execute_after)), "BLACKOUT_SAFE_EXECUTION_DELAY");'),
-            ('  approval_nullifiers.insert(nullifier);\n  proposals.insert(disclose(proposal_commitment), ProposalRecord {', '  approval_nullifiers.insert(nullifier);\n  assert(proposal.approval_count != 18446744073709551615, "BLACKOUT_SAFE_APPROVAL_COUNT_OVERFLOW");\n  const next_approval_count = (proposal.approval_count + 1) as Uint<64>;\n  proposals.insert(disclose(proposal_commitment), ProposalRecord {'),
-            ('    approval_count: proposal.approval_count + 1,', '    approval_count: next_approval_count,'),
-            ('  assert(next.membership_version == membership_version + 1, "BLACKOUT_SAFE_ROTATION_MEMBERSHIP_VERSION_INVALID");', '  assert(membership_version != 18446744073709551615, "BLACKOUT_SAFE_MEMBERSHIP_VERSION_OVERFLOW");\n  const next_membership_version = (membership_version + 1) as Uint<64>;\n  assert(next.membership_version == next_membership_version, "BLACKOUT_SAFE_ROTATION_MEMBERSHIP_VERSION_INVALID");'),
-            ('  membership_version = membership_version + 1;', '  membership_version = next_membership_version;'),
-            ('  assert(next.policy_version == policy_version + 1, "BLACKOUT_SAFE_NEW_POLICY_VERSION_INVALID");', '  assert(policy_version != 18446744073709551615, "BLACKOUT_SAFE_POLICY_VERSION_OVERFLOW");\n  const next_policy_version = (policy_version + 1) as Uint<64>;\n  assert(next.policy_version == next_policy_version, "BLACKOUT_SAFE_NEW_POLICY_VERSION_INVALID");'),
-            ('  is_governance: Boolean;\n', ''),
-            ('    is_governance: governance,\n', ''),
-            ('  if (paused) { assert(proposal.is_governance, "BLACKOUT_SAFE_PAUSED"); }', '  if (paused) {\n    const recovery_payload = local_private_proposal();\n    assert(private_proposal_commitment(recovery_payload) == proposal_commitment, "BLACKOUT_SAFE_PAUSED_RECOVERY_PAYLOAD_MISMATCH");\n    assert(disclose(is_governance_payload(recovery_payload)), "BLACKOUT_SAFE_PAUSED");\n  }'),
-            ('    is_governance: proposal.is_governance,\n', ''),
-            ('  assert(!proposal.is_governance, "BLACKOUT_SAFE_NOT_TREASURY_PROPOSAL");\n', ''),
-            ('    is_governance: false,\n', ''),
-            ('  assert(proposal.is_governance, "BLACKOUT_SAFE_NOT_GOVERNANCE_PROPOSAL");\n', ''),
-            ('    is_governance: true,\n', ''),
-            ('    is_governance: target.is_governance,\n', ''),
-            ('  policy_version = next.policy_version;\n  policy_is_private = next.is_private;\n  if (next.is_private) {\n    standard_required_quorum = 0;\n  } else {\n    standard_required_quorum = next.threshold;\n  }', '  policy_version = disclose(next.policy_version);\n  policy_is_private = disclose(next.is_private);\n  if (disclose(next.is_private)) {\n    standard_required_quorum = 0;\n  } else {\n    standard_required_quorum = disclose(next.threshold);\n  }'),
-          ]
-          for old, new in replacements:
-            assert old in s, f'expected source not found: {old[:100]}'
-            s = s.replace(old, new)
-          p.write_text(s)
-          PY
+          test "$(.blackout-toolchain/bin/compact compile --version)" = "0.31.1"
+          test "$(.blackout-toolchain/bin/compact compile --ledger-version)" = "ledger-8.0.2"
+          test "$(.blackout-toolchain/bin/compact compile --runtime-version)" = "0.16.0"
       - name: Compile Safe Compact source
         run: |
           rm -rf contract/build-safe
           .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.compact contract/build-safe
           test -f contract/build-safe/compiler/contract-info.json
-      - name: Verify compiler metadata
+      - name: Verify compiler metadata and circuits
         run: |
-          node -e "const f=require('./contract/build-safe/compiler/contract-info.json'); if(f['compiler-version']!=='0.31.1') throw new Error('wrong compiler '+f['compiler-version']); if(f['language-version']!=='0.23.0') throw new Error('wrong language '+f['language-version']); if(f['runtime-version']!=='0.16.0') throw new Error('wrong runtime '+f['runtime-version']); console.log('circuits', f.circuits.map(c=>c.name));"
+          node - <<'NODE'
+          const f = require('./contract/build-safe/compiler/contract-info.json');
+          if (f['compiler-version'] !== '0.31.1') throw new Error(`wrong compiler ${f['compiler-version']}`);
+          if (f['language-version'] !== '0.23.0') throw new Error(`wrong language ${f['language-version']}`);
+          if (f['runtime-version'] !== '0.16.0') throw new Error(`wrong runtime ${f['runtime-version']}`);
+          const required = [
+            'propose_private','approve_private','prove_quorum','deposit_shielded','execute_shielded_transfer',
+            'governance_pause','governance_resume','governance_cancel_proposal','governance_rotate_membership',
+            'governance_change_policy','receipt_quorum_authorized','receipt_executed_exactly_once',
+            'receipt_disclose_amount','receipt_disclose_recipient','receipt_proposal_cancelled'
+          ];
+          const actual = new Set(f.circuits.map((c) => c.name));
+          for (const name of required) if (!actual.has(name)) throw new Error(`missing circuit ${name}`);
+          console.log(`verified ${required.length} exported Safe circuits`);
+          NODE

@@ -29,6 +29,9 @@ import type {
 } from './model.ts';
 import { getTreasuryCapabilities, type ShieldedTreasuryAdapter } from './treasury.ts';
 
+const MAX_UINT64 = 18_446_744_073_709_551_615n;
+type PrivateProposalKind = 'TREASURY' | 'GOVERNANCE';
+
 export class SafeProtocolError extends Error {
   readonly code: string;
 
@@ -66,6 +69,8 @@ export interface ExecuteGovernanceReferenceInput {
 export class BlackoutSafeReferenceEngine {
   #state: PublicSafeState;
   #proposals = new Map<Hex32, PublicProposalState>();
+  /** Private/off-ledger metadata. Public proposal state never exposes proposal category. */
+  #proposalKinds = new Map<Hex32, PrivateProposalKind>();
   #approvalNullifiers = new Set<Hex32>();
   #executionNullifiers = new Set<Hex32>();
   #proposalNonceNullifiers = new Set<Hex32>();
@@ -144,8 +149,16 @@ export class BlackoutSafeReferenceEngine {
     }
   }
 
+  private proposalKind(proposalCommitment: Hex32): PrivateProposalKind {
+    const kind = this.#proposalKinds.get(proposalCommitment);
+    if (!kind) {
+      throw new SafeProtocolError('PRIVATE_PROPOSAL_METADATA_MISSING', 'private proposal category is unavailable');
+    }
+    return kind;
+  }
+
   async propose(payload: PrivateProposalPayload, member: PrivateMemberMaterial): Promise<PublicProposalReceipt> {
-    const kind = payload.actionType === 'GOVERNANCE' ? 'GOVERNANCE' : 'TREASURY';
+    const kind: PrivateProposalKind = payload.actionType === 'GOVERNANCE' ? 'GOVERNANCE' : 'TREASURY';
     if (this.#state.status !== 'ACTIVE' && kind !== 'GOVERNANCE') {
       throw new SafeProtocolError('SAFE_PAUSED', 'safe is paused for treasury actions');
     }
@@ -177,12 +190,12 @@ export class BlackoutSafeReferenceEngine {
     }
 
     this.#proposalNonceNullifiers.add(nonceNullifier);
+    this.#proposalKinds.set(proposalCommitment, kind);
     this.#proposals.set(proposalCommitment, {
       proposalCommitment,
       membershipVersion: this.#state.membershipVersion,
       policyVersion: this.#state.policyVersion,
       approvalCount: 0,
-      kind,
       status: 'PENDING',
     });
     return {
@@ -190,7 +203,6 @@ export class BlackoutSafeReferenceEngine {
       proposalCommitment,
       membershipVersion: this.#state.membershipVersion,
       policyVersion: this.#state.policyVersion,
-      kind,
       status: 'PENDING',
     };
   }
@@ -198,7 +210,8 @@ export class BlackoutSafeReferenceEngine {
   async approve(proposalCommitment: Hex32, member: PrivateMemberMaterial): Promise<PublicApprovalReceipt> {
     const proposal = this.#proposals.get(proposalCommitment);
     if (!proposal) throw new SafeProtocolError('UNKNOWN_PROPOSAL', 'proposal does not exist');
-    if (this.#state.status !== 'ACTIVE' && proposal.kind !== 'GOVERNANCE') {
+    const kind = this.proposalKind(proposalCommitment);
+    if (this.#state.status !== 'ACTIVE' && kind !== 'GOVERNANCE') {
       throw new SafeProtocolError('SAFE_PAUSED', 'safe is paused for treasury actions');
     }
     if (proposal.status !== 'PENDING') throw new SafeProtocolError('PROPOSAL_NOT_PENDING', 'proposal cannot accept approvals');
@@ -208,6 +221,9 @@ export class BlackoutSafeReferenceEngine {
     const nullifier = await computeProposalNullifier(this.#state.safeId, proposalCommitment, member.memberSecret);
     if (this.#approvalNullifiers.has(nullifier)) {
       throw new SafeProtocolError('DUPLICATE_APPROVAL', 'this member already approved this proposal');
+    }
+    if (proposal.approvalCount >= Number.MAX_SAFE_INTEGER) {
+      throw new SafeProtocolError('APPROVAL_COUNT_OVERFLOW', 'approval count exceeded the reference-model safe integer range');
     }
 
     this.#approvalNullifiers.add(nullifier);
@@ -248,7 +264,9 @@ export class BlackoutSafeReferenceEngine {
     const proposal = this.#proposals.get(input.proposalCommitment);
     if (!proposal) throw new SafeProtocolError('UNKNOWN_PROPOSAL', 'proposal does not exist');
     if (proposal.status !== 'PENDING') throw new SafeProtocolError('PROPOSAL_NOT_PENDING', 'proposal cannot be executed');
-    if (proposal.kind !== 'TREASURY') throw new SafeProtocolError('GOVERNANCE_REQUIRES_GOVERNANCE_EXECUTION', 'governance proposal must use executeGovernance');
+    if (this.proposalKind(input.proposalCommitment) !== 'TREASURY') {
+      throw new SafeProtocolError('GOVERNANCE_REQUIRES_GOVERNANCE_EXECUTION', 'governance proposal must use executeGovernance');
+    }
     this.requireProposalCurrent(proposal);
     if (input.payload.safeId !== this.#state.safeId) throw new SafeProtocolError('WRONG_SAFE', 'execution payload is bound to another Safe');
     if (input.payload.actionType !== 'TRANSFER') {
@@ -301,6 +319,7 @@ export class BlackoutSafeReferenceEngine {
 
     this.#executionNullifiers.add(executionNullifier);
     proposal.status = 'EXECUTED';
+    this.#proposalKinds.delete(input.proposalCommitment);
 
     return {
       safeId: this.#state.safeId,
@@ -322,7 +341,9 @@ export class BlackoutSafeReferenceEngine {
     const proposal = this.#proposals.get(input.proposalCommitment);
     if (!proposal) throw new SafeProtocolError('UNKNOWN_PROPOSAL', 'proposal does not exist');
     if (proposal.status !== 'PENDING') throw new SafeProtocolError('PROPOSAL_NOT_PENDING', 'governance proposal cannot be executed');
-    if (proposal.kind !== 'GOVERNANCE') throw new SafeProtocolError('NOT_GOVERNANCE_PROPOSAL', 'treasury proposal cannot execute governance');
+    if (this.proposalKind(input.proposalCommitment) !== 'GOVERNANCE') {
+      throw new SafeProtocolError('NOT_GOVERNANCE_PROPOSAL', 'treasury proposal cannot execute governance');
+    }
     this.requireProposalCurrent(proposal);
     if (input.payload.safeId !== this.#state.safeId || input.payload.actionType !== 'GOVERNANCE') {
       throw new SafeProtocolError('INVALID_GOVERNANCE_PAYLOAD', 'governance payload is not bound to this Safe');
@@ -358,6 +379,9 @@ export class BlackoutSafeReferenceEngine {
       if (input.operation.newMembershipRoot === this.#state.membershipRoot) {
         throw new SafeProtocolError('MEMBERSHIP_ROOT_UNCHANGED', 'membership rotation must change the active root');
       }
+      if (this.#state.membershipVersion >= MAX_UINT64) {
+        throw new SafeProtocolError('MEMBERSHIP_VERSION_OVERFLOW', 'membership version cannot exceed Uint64');
+      }
       const nextVersion = this.#state.membershipVersion + 1n;
       const nextPolicy = { ...this.#activePolicy, membershipVersion: nextVersion } as TreasuryPolicy;
       const nextPolicyCommitment = await computePolicyCommitment(nextPolicy);
@@ -368,6 +392,9 @@ export class BlackoutSafeReferenceEngine {
     } else if (input.operation.action === 'CHANGE_POLICY') {
       if (input.operation.newPolicy.membershipVersion !== this.#state.membershipVersion) {
         throw new SafeProtocolError('NEW_POLICY_MEMBERSHIP_MISMATCH', 'new policy must bind the current membership version');
+      }
+      if (this.#state.policyVersion >= MAX_UINT64) {
+        throw new SafeProtocolError('POLICY_VERSION_OVERFLOW', 'policy version cannot exceed Uint64');
       }
       if (input.operation.newPolicy.policyVersion !== this.#state.policyVersion + 1n) {
         throw new SafeProtocolError('NEW_POLICY_VERSION_INVALID', 'new policy version must increment exactly once');
@@ -392,11 +419,13 @@ export class BlackoutSafeReferenceEngine {
       if (!target) throw new SafeProtocolError('CANCEL_TARGET_UNKNOWN', 'cancel target does not exist');
       if (target.status !== 'PENDING') throw new SafeProtocolError('CANCEL_TARGET_NOT_PENDING', 'only pending proposals can be cancelled');
       target.status = 'CANCELLED';
+      this.#proposalKinds.delete(input.operation.targetProposalCommitment);
       cancelledProposalCommitment = input.operation.targetProposalCommitment;
     }
 
     this.#executionNullifiers.add(executionNullifier);
     proposal.status = 'EXECUTED';
+    this.#proposalKinds.delete(input.proposalCommitment);
 
     return {
       safeId: this.#state.safeId,
@@ -412,13 +441,18 @@ export class BlackoutSafeReferenceEngine {
     };
   }
 
+  /** Legacy test helper only; production state transitions use executeGovernance. */
   async rotateMembershipForReferenceTests(newRoot: Hex32): Promise<void> {
+    if (this.#state.membershipVersion >= MAX_UINT64) {
+      throw new SafeProtocolError('MEMBERSHIP_VERSION_OVERFLOW', 'membership version cannot exceed Uint64');
+    }
     this.#state.membershipRoot = newRoot;
     this.#state.membershipVersion += 1n;
     this.#activePolicy = { ...this.#activePolicy, membershipVersion: this.#state.membershipVersion } as TreasuryPolicy;
     this.#state.policyCommitment = await computePolicyCommitment(this.#activePolicy);
   }
 
+  /** Legacy test helper only; production state transitions use executeGovernance. */
   async rotatePolicyForReferenceTests(policy: TreasuryPolicy): Promise<void> {
     this.#activePolicy = { ...policy };
     this.#state.policyCommitment = await computePolicyCommitment(policy);

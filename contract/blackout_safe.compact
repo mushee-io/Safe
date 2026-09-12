@@ -1,7 +1,9 @@
 // BLACKOUT SAFE — Milestones 1–15 hardened contract core
-// Compatibility target: compactc 0.31.1 / language 0.23 / runtime 0.16.0.
-// SOURCE STATUS: designed against documented 0.23 primitives; compile verification
-// remains blocked until the repository Compact binary is available in this runtime.
+// Verified source compatibility target:
+// compactc 0.31.1 / Compact language 0.23.0 / ledger-8.0.2 / runtime 0.16.0.
+//
+// `compact compile --skip-zk` has passed against this source shape in CI.
+// Full prover/verifier key generation is verified separately before release claims.
 
 pragma language_version 0.23;
 import CompactStandardLibrary;
@@ -10,7 +12,6 @@ export struct ProposalRecord {
   membership_version: Uint<64>;
   policy_version: Uint<64>;
   approval_count: Uint<64>;
-  is_governance: Boolean;
   active: Boolean;
 }
 
@@ -38,47 +39,76 @@ export struct PrivatePolicyWitness {
   salt: Bytes<32>;
 }
 
+// ---------------------------------------------------------------------------
+// PUBLIC LEDGER STATE
+// ---------------------------------------------------------------------------
+
 export sealed ledger safe_id: Bytes<32>;
 export ledger membership_root: MerkleTreeDigest;
 export ledger membership_version: Uint<64>;
 export ledger policy_version: Uint<64>;
 export ledger policy_commitment: Bytes<32>;
 export ledger policy_is_private: Boolean;
+// STANDARD mode exposes its threshold here. PRIVATE_POLICY sets this to zero.
 export ledger standard_required_quorum: Uint<64>;
 export ledger paused: Boolean;
 
+// Proposal category/action remains private. Only commitment-bound epochs,
+// aggregate approval count and liveness are public protocol state.
 export ledger proposals: Map<Bytes<32>, ProposalRecord>;
 export ledger approval_nullifiers: Set<Bytes<32>>;
 export ledger proposal_nonce_nullifiers: Set<Bytes<32>>;
 export ledger execution_nullifiers: Set<Bytes<32>>;
 export ledger cancelled_proposals: Set<Bytes<32>>;
 
+// ---------------------------------------------------------------------------
+// PRIVATE LOCAL / WITNESS INPUTS
+// ---------------------------------------------------------------------------
+
 witness local_member_secret(): Bytes<32>;
 witness local_member_path(member_commitment: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>;
 witness local_private_proposal(): PrivateProposalPayload;
 witness local_policy(): PrivatePolicyWitness;
 witness local_next_policy(): PrivatePolicyWitness;
+
+// Stateless witness-supplied shielded custody. Coin opening material is not
+// written to ordinary public contract state.
 witness held_coin(color: Bytes<32>): QualifiedShieldedCoinInfo;
 
+// ---------------------------------------------------------------------------
+// DOMAIN-SEPARATED COMMITMENTS / NULLIFIERS
+// ---------------------------------------------------------------------------
+
 circuit member_commitment(secret: Bytes<32>): Bytes<32> {
-  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "blackout:safe:member:v1"), secret]);
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "blackout:safe:member:v1"),
+    secret
+  ]);
 }
 
 circuit proposal_nullifier(secret: Bytes<32>, proposal_commitment: Bytes<32>): Bytes<32> {
   return disclose(persistentHash<Vector<4, Bytes<32>>>([
-    pad(32, "blackout:safe:approval:v1"), safe_id, proposal_commitment, secret
+    pad(32, "blackout:safe:approval:v1"),
+    safe_id,
+    proposal_commitment,
+    secret
   ]));
 }
 
 circuit proposal_nonce_nullifier(nonce: Bytes<32>): Bytes<32> {
   return disclose(persistentHash<Vector<3, Bytes<32>>>([
-    pad(32, "blackout:safe:proposal-nonce:v1"), safe_id, nonce
+    pad(32, "blackout:safe:proposal-nonce:v1"),
+    safe_id,
+    nonce
   ]));
 }
 
 circuit execution_nullifier(proposal_commitment: Bytes<32>, nonce: Bytes<32>): Bytes<32> {
   return disclose(persistentHash<Vector<4, Bytes<32>>>([
-    pad(32, "blackout:safe:execution:v1"), safe_id, proposal_commitment, nonce
+    pad(32, "blackout:safe:execution:v1"),
+    safe_id,
+    proposal_commitment,
+    nonce
   ]));
 }
 
@@ -87,9 +117,18 @@ circuit private_proposal_commitment(payload: PrivateProposalPayload): Bytes<32> 
     Bytes<32>, Bytes<32>, Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>,
     Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bytes<32>, Bytes<32>
   ]>([
-    pad(32, "blackout:safe:proposal:v1"), safe_id, payload.action_type,
-    payload.asset, payload.recipient, payload.amount, payload.calldata_or_action,
-    payload.memo_hash, payload.created_at, payload.expires_at, payload.nonce, payload.salt
+    pad(32, "blackout:safe:proposal:v1"),
+    safe_id,
+    payload.action_type,
+    payload.asset,
+    payload.recipient,
+    payload.amount,
+    payload.calldata_or_action,
+    payload.memo_hash,
+    payload.created_at,
+    payload.expires_at,
+    payload.nonce,
+    payload.salt
   ]);
 }
 
@@ -97,9 +136,15 @@ circuit private_policy_commitment(policy: PrivatePolicyWitness): Bytes<32> {
   return persistentHash<[
     Bytes<32>, Boolean, Uint<64>, Uint<64>, Uint<64>, Uint<64>, Uint<64>, Uint<64>, Bytes<32>
   ]>([
-    pad(32, "blackout:safe:policy:v3"), policy.is_private, policy.threshold,
-    policy.max_transfer_amount, policy.max_proposal_lifetime, policy.min_execution_delay,
-    policy.membership_version, policy.policy_version, policy.salt
+    pad(32, "blackout:safe:policy:v3"),
+    policy.is_private,
+    policy.threshold,
+    policy.max_transfer_amount,
+    policy.max_proposal_lifetime,
+    policy.min_execution_delay,
+    policy.membership_version,
+    policy.policy_version,
+    policy.salt
   ]);
 }
 
@@ -121,6 +166,10 @@ circuit governance_root_commitment(action_tag: Bytes<32>, root: MerkleTreeDigest
   ]);
 }
 
+// ---------------------------------------------------------------------------
+// AUTHORIZATION / POLICY HELPERS
+// ---------------------------------------------------------------------------
+
 circuit require_current_member(secret: Bytes<32>): [] {
   const member = member_commitment(secret);
   const path = local_member_path(member);
@@ -137,6 +186,7 @@ circuit require_policy_opening(): PrivatePolicyWitness {
   assert(policy.policy_version == policy_version, "BLACKOUT_SAFE_POLICY_VERSION_MISMATCH");
   assert(policy.is_private == policy_is_private, "BLACKOUT_SAFE_POLICY_MODE_MISMATCH");
   assert(private_policy_commitment(policy) == policy_commitment, "BLACKOUT_SAFE_POLICY_COMMITMENT_MISMATCH");
+
   if (policy_is_private) {
     assert(standard_required_quorum == 0, "BLACKOUT_SAFE_PRIVATE_POLICY_THRESHOLD_LEAK");
   } else {
@@ -164,7 +214,8 @@ circuit require_transfer_policy(payload: PrivateProposalPayload, policy: Private
 }
 
 circuit require_execution_window(payload: PrivateProposalPayload, policy: PrivatePolicyWitness): [] {
-  assert(blockTimeGte(disclose(payload.created_at + policy.min_execution_delay)), "BLACKOUT_SAFE_EXECUTION_DELAY");
+  const execute_after = (payload.created_at + policy.min_execution_delay) as Uint<64>;
+  assert(blockTimeGte(disclose(execute_after)), "BLACKOUT_SAFE_EXECUTION_DELAY");
   assert(blockTimeLt(disclose(payload.expires_at)), "BLACKOUT_SAFE_PROPOSAL_EXPIRED");
 }
 
@@ -184,6 +235,7 @@ constructor(
   } else {
     assert(initial_standard_required_quorum > 0, "BLACKOUT_SAFE_INVALID_STANDARD_QUORUM");
   }
+
   safe_id = disclose(initial_safe_id);
   membership_root = disclose(initial_membership_root);
   membership_version = 1;
@@ -194,51 +246,80 @@ constructor(
   paused = false;
 }
 
+// ---------------------------------------------------------------------------
+// PRIVATE PROPOSALS + POLICY GATE
+// ---------------------------------------------------------------------------
+
 export circuit propose_private(expected_commitment: Bytes<32>): [] {
   const secret = local_member_secret();
   require_current_member(secret);
   const policy = require_policy_opening();
   const payload = local_private_proposal();
   const governance = is_governance_payload(payload);
-  if (paused) { assert(governance, "BLACKOUT_SAFE_PAUSED"); }
+
+  if (paused) {
+    assert(governance, "BLACKOUT_SAFE_PAUSED");
+  }
   if (governance) {
     assert(payload.amount == 0, "BLACKOUT_SAFE_GOVERNANCE_AMOUNT_NONZERO");
     require_lifetime_policy(payload, policy);
   } else {
     require_transfer_policy(payload, policy);
   }
+
   const computed = private_proposal_commitment(payload);
   assert(computed == expected_commitment, "BLACKOUT_SAFE_PROPOSAL_COMMITMENT_MISMATCH");
   assert(!proposals.member(disclose(expected_commitment)), "BLACKOUT_SAFE_PROPOSAL_EXISTS");
+
   const nonce_nul = proposal_nonce_nullifier(payload.nonce);
   assert(!proposal_nonce_nullifiers.member(nonce_nul), "BLACKOUT_SAFE_PROPOSAL_NONCE_REUSED");
   proposal_nonce_nullifiers.insert(nonce_nul);
+
   proposals.insert(disclose(expected_commitment), ProposalRecord {
     membership_version: membership_version,
     policy_version: policy_version,
     approval_count: 0,
-    is_governance: governance,
     active: true
   });
 }
+
+// ---------------------------------------------------------------------------
+// ANONYMOUS UNIQUE APPROVAL + QUORUM
+// ---------------------------------------------------------------------------
 
 export circuit approve_private(proposal_commitment: Bytes<32>): [] {
   assert(proposals.member(disclose(proposal_commitment)), "BLACKOUT_SAFE_UNKNOWN_PROPOSAL");
   const proposal = proposals.lookup(disclose(proposal_commitment));
   assert(proposal.active, "BLACKOUT_SAFE_PROPOSAL_NOT_ACTIVE");
-  if (paused) { assert(proposal.is_governance, "BLACKOUT_SAFE_PAUSED"); }
+
+  // Proposal category stays private in public ledger state. During a pause,
+  // a signer proves the committed payload is governance before approval is allowed.
+  if (paused) {
+    const recovery_payload = local_private_proposal();
+    assert(
+      private_proposal_commitment(recovery_payload) == proposal_commitment,
+      "BLACKOUT_SAFE_PAUSED_RECOVERY_PAYLOAD_MISMATCH"
+    );
+    assert(disclose(is_governance_payload(recovery_payload)), "BLACKOUT_SAFE_PAUSED");
+  }
+
   assert(proposal.membership_version == membership_version, "BLACKOUT_SAFE_STALE_MEMBERSHIP");
   assert(proposal.policy_version == policy_version, "BLACKOUT_SAFE_STALE_POLICY");
+
   const secret = local_member_secret();
   require_current_member(secret);
+
   const nullifier = proposal_nullifier(secret, proposal_commitment);
   assert(!approval_nullifiers.member(nullifier), "BLACKOUT_SAFE_DUPLICATE_APPROVAL");
   approval_nullifiers.insert(nullifier);
+
+  assert(proposal.approval_count != 18446744073709551615, "BLACKOUT_SAFE_APPROVAL_COUNT_OVERFLOW");
+  const next_approval_count = (proposal.approval_count + 1) as Uint<64>;
+
   proposals.insert(disclose(proposal_commitment), ProposalRecord {
     membership_version: proposal.membership_version,
     policy_version: proposal.policy_version,
-    approval_count: proposal.approval_count + 1,
-    is_governance: proposal.is_governance,
+    approval_count: next_approval_count,
     active: true
   });
 }
@@ -255,6 +336,10 @@ export circuit prove_quorum(proposal_commitment: Bytes<32>): Boolean {
   return disclose(valid);
 }
 
+// ---------------------------------------------------------------------------
+// SHIELDED CONTRACT TREASURY
+// ---------------------------------------------------------------------------
+
 export circuit deposit_shielded(coin: ShieldedCoinInfo): [] {
   receiveShielded(disclose(coin));
 }
@@ -262,11 +347,12 @@ export circuit deposit_shielded(coin: ShieldedCoinInfo): [] {
 export circuit execute_shielded_transfer(proposal_commitment: Bytes<32>): Maybe<ShieldedCoinInfo> {
   assert(!paused, "BLACKOUT_SAFE_PAUSED");
   assert(proposals.member(disclose(proposal_commitment)), "BLACKOUT_SAFE_UNKNOWN_PROPOSAL");
+
   const proposal = proposals.lookup(disclose(proposal_commitment));
   assert(proposal.active, "BLACKOUT_SAFE_PROPOSAL_NOT_ACTIVE");
-  assert(!proposal.is_governance, "BLACKOUT_SAFE_NOT_TREASURY_PROPOSAL");
   assert(proposal.membership_version == membership_version, "BLACKOUT_SAFE_STALE_MEMBERSHIP");
   assert(proposal.policy_version == policy_version, "BLACKOUT_SAFE_STALE_POLICY");
+
   const policy = require_policy_opening();
   const payload = local_private_proposal();
   require_transfer_policy(payload, policy);
@@ -274,38 +360,51 @@ export circuit execute_shielded_transfer(proposal_commitment: Bytes<32>): Maybe<
   assert(private_proposal_commitment(payload) == proposal_commitment, "BLACKOUT_SAFE_EXECUTION_PAYLOAD_MISMATCH");
   assert(proposal.approval_count >= policy.threshold, "BLACKOUT_SAFE_QUORUM_NOT_REACHED");
   require_execution_window(payload, policy);
+
   const exec_nul = execution_nullifier(proposal_commitment, payload.nonce);
   assert(!execution_nullifiers.member(exec_nul), "BLACKOUT_SAFE_EXECUTION_REPLAY");
+
   const coin = held_coin(payload.asset);
   assert(coin.color == payload.asset, "BLACKOUT_SAFE_TREASURY_ASSET_MISMATCH");
   assert(coin.value >= (payload.amount as Uint<128>), "BLACKOUT_SAFE_INSUFFICIENT_SHIELDED_FUNDS");
+
   const recipient = ZswapCoinPublicKey { bytes: payload.recipient };
   const result = sendShielded(
     disclose(coin),
     left<ZswapCoinPublicKey, ContractAddress>(disclose(recipient)),
     disclose(payload.amount) as Uint<128>
   );
+
   execution_nullifiers.insert(exec_nul);
   proposals.insert(disclose(proposal_commitment), ProposalRecord {
     membership_version: proposal.membership_version,
     policy_version: proposal.policy_version,
     approval_count: proposal.approval_count,
-    is_governance: false,
     active: false
   });
+
+  // Only the Safe's change coin is returned. Recipient discovery/ciphertext
+  // delivery remains a wallet/application responsibility.
   if (disclose(result.change.is_some)) {
     return some<ShieldedCoinInfo>(disclose(result.change.value));
   }
   return none<ShieldedCoinInfo>();
 }
 
-circuit require_governance_ready(proposal_commitment: Bytes<32>, expected_action: Bytes<32>): PrivateProposalPayload {
+// ---------------------------------------------------------------------------
+// GOVERNANCE / RECOVERY
+// ---------------------------------------------------------------------------
+
+circuit require_governance_ready(
+  proposal_commitment: Bytes<32>,
+  expected_action: Bytes<32>
+): PrivateProposalPayload {
   assert(proposals.member(disclose(proposal_commitment)), "BLACKOUT_SAFE_UNKNOWN_PROPOSAL");
   const proposal = proposals.lookup(disclose(proposal_commitment));
   assert(proposal.active, "BLACKOUT_SAFE_PROPOSAL_NOT_ACTIVE");
-  assert(proposal.is_governance, "BLACKOUT_SAFE_NOT_GOVERNANCE_PROPOSAL");
   assert(proposal.membership_version == membership_version, "BLACKOUT_SAFE_STALE_MEMBERSHIP");
   assert(proposal.policy_version == policy_version, "BLACKOUT_SAFE_STALE_POLICY");
+
   const policy = require_policy_opening();
   const payload = local_private_proposal();
   assert(is_governance_payload(payload), "BLACKOUT_SAFE_NOT_GOVERNANCE_PAYLOAD");
@@ -315,6 +414,7 @@ circuit require_governance_ready(proposal_commitment: Bytes<32>, expected_action
   assert(private_proposal_commitment(payload) == proposal_commitment, "BLACKOUT_SAFE_GOVERNANCE_PAYLOAD_MISMATCH");
   assert(payload.calldata_or_action == expected_action, "BLACKOUT_SAFE_GOVERNANCE_OPERATION_MISMATCH");
   assert(proposal.approval_count >= policy.threshold, "BLACKOUT_SAFE_QUORUM_NOT_REACHED");
+
   const exec_nul = execution_nullifier(proposal_commitment, payload.nonce);
   assert(!execution_nullifiers.member(exec_nul), "BLACKOUT_SAFE_EXECUTION_REPLAY");
   return payload;
@@ -328,7 +428,6 @@ circuit finish_governance(proposal_commitment: Bytes<32>, payload: PrivatePropos
     membership_version: proposal.membership_version,
     policy_version: proposal.policy_version,
     approval_count: proposal.approval_count,
-    is_governance: true,
     active: false
   });
 }
@@ -359,11 +458,11 @@ export circuit governance_cancel_proposal(
   assert(proposals.member(disclose(target_proposal_commitment)), "BLACKOUT_SAFE_CANCEL_TARGET_UNKNOWN");
   const target = proposals.lookup(disclose(target_proposal_commitment));
   assert(target.active, "BLACKOUT_SAFE_CANCEL_TARGET_NOT_ACTIVE");
+
   proposals.insert(disclose(target_proposal_commitment), ProposalRecord {
     membership_version: target.membership_version,
     policy_version: target.policy_version,
     approval_count: target.approval_count,
-    is_governance: target.is_governance,
     active: false
   });
   cancelled_proposals.insert(disclose(target_proposal_commitment));
@@ -377,6 +476,7 @@ export circuit governance_rotate_membership(
   const expected = governance_root_commitment(pad(32, "ROTATE_MEMBERSHIP"), new_membership_root);
   const payload = require_governance_ready(proposal_commitment, expected);
   assert(new_membership_root.field != membership_root.field, "BLACKOUT_SAFE_MEMBERSHIP_ROOT_UNCHANGED");
+
   const current = require_policy_opening();
   const next = local_next_policy();
   assert(next.is_private == current.is_private, "BLACKOUT_SAFE_ROTATION_POLICY_MODE_CHANGED");
@@ -385,10 +485,14 @@ export circuit governance_rotate_membership(
   assert(next.max_proposal_lifetime == current.max_proposal_lifetime, "BLACKOUT_SAFE_ROTATION_LIFETIME_RULE_CHANGED");
   assert(next.min_execution_delay == current.min_execution_delay, "BLACKOUT_SAFE_ROTATION_DELAY_RULE_CHANGED");
   assert(next.policy_version == policy_version, "BLACKOUT_SAFE_ROTATION_POLICY_VERSION_CHANGED");
-  assert(next.membership_version == membership_version + 1, "BLACKOUT_SAFE_ROTATION_MEMBERSHIP_VERSION_INVALID");
+
+  assert(membership_version != 18446744073709551615, "BLACKOUT_SAFE_MEMBERSHIP_VERSION_OVERFLOW");
+  const next_membership_version = (membership_version + 1) as Uint<64>;
+  assert(next.membership_version == next_membership_version, "BLACKOUT_SAFE_ROTATION_MEMBERSHIP_VERSION_INVALID");
   assert(next.salt == current.salt, "BLACKOUT_SAFE_ROTATION_POLICY_SALT_CHANGED");
+
   membership_root = disclose(new_membership_root);
-  membership_version = membership_version + 1;
+  membership_version = next_membership_version;
   policy_commitment = disclose(private_policy_commitment(next));
   finish_governance(proposal_commitment, payload);
 }
@@ -396,24 +500,36 @@ export circuit governance_rotate_membership(
 export circuit governance_change_policy(proposal_commitment: Bytes<32>): [] {
   const next = local_next_policy();
   assert(next.membership_version == membership_version, "BLACKOUT_SAFE_NEW_POLICY_MEMBERSHIP_MISMATCH");
-  assert(next.policy_version == policy_version + 1, "BLACKOUT_SAFE_NEW_POLICY_VERSION_INVALID");
+
+  assert(policy_version != 18446744073709551615, "BLACKOUT_SAFE_POLICY_VERSION_OVERFLOW");
+  const next_policy_version = (policy_version + 1) as Uint<64>;
+  assert(next.policy_version == next_policy_version, "BLACKOUT_SAFE_NEW_POLICY_VERSION_INVALID");
   assert(next.threshold > 0, "BLACKOUT_SAFE_INVALID_POLICY_THRESHOLD");
+
   if (next.is_private) {
     assert(next.salt != pad(32, ""), "BLACKOUT_SAFE_PRIVATE_POLICY_SALT_REQUIRED");
   }
+
   const next_commitment = private_policy_commitment(next);
   const expected = governance_bytes_commitment(pad(32, "CHANGE_POLICY"), next_commitment);
   const payload = require_governance_ready(proposal_commitment, expected);
+
   policy_commitment = disclose(next_commitment);
-  policy_version = next.policy_version;
-  policy_is_private = next.is_private;
-  if (next.is_private) {
+  // These are intentionally public policy metadata. PRIVATE_POLICY threshold
+  // remains hidden because only STANDARD mode writes threshold publicly.
+  policy_version = disclose(next.policy_version);
+  policy_is_private = disclose(next.is_private);
+  if (disclose(next.is_private)) {
     standard_required_quorum = 0;
   } else {
-    standard_required_quorum = next.threshold;
+    standard_required_quorum = disclose(next.threshold);
   }
   finish_governance(proposal_commitment, payload);
 }
+
+// ---------------------------------------------------------------------------
+// BLACKOUT RECEIPT CIRCUITS
+// ---------------------------------------------------------------------------
 
 export circuit receipt_quorum_authorized(proposal_commitment: Bytes<32>): Boolean {
   return prove_quorum(proposal_commitment);
