@@ -95,6 +95,19 @@ jobs:
           console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} exported circuits`);
           NODE
 
+      - name: Strict browser TypeScript
+        run: npm run typecheck:web
+
+      - name: Build Vite frontend
+        run: npm run build:web:bundle
+
+      - name: Verify deployable web output
+        run: |
+          test -f dist/index.html
+          test -f dist/zk-artifacts/blackout-safe/keys/propose_private.prover
+          test -f dist/zk-artifacts/blackout-safe/zkir/propose_private.bzkir
+          echo "BLACKOUT SAFE: deployable frontend + proving assets verified"
+
       - name: Upload generated Safe artifacts
         uses: actions/upload-artifact@v4
         with:
