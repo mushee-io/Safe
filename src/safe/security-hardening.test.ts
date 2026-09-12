@@ -7,7 +7,10 @@ import {
   resolvePinnedAssetBaseUrl,
   sanitizeMidnightErrorMessage,
 } from './midnight/security-hardening.ts';
-import { getBlackoutSafePrivateStateProvider } from './midnight/private-state.ts';
+import {
+  disposeBlackoutSafePrivateStateScope,
+  getBlackoutSafePrivateStateProvider,
+} from './midnight/private-state.ts';
 import {
   assertPreviewSession,
   revalidateBlackoutSafeLaceSession,
@@ -198,6 +201,20 @@ await test('H9 historical quorum remains provable against the proposal policy sn
   const historical = await f.engine.proveHistoricalQuorum(proposal.proposalCommitment, f.policy);
   assert(historical.valid, 'historical quorum proof should survive later policy rotation');
   assert(historical.policyVersion === 1n, 'historical receipt must preserve original policy version');
+});
+
+await test('H10 disposed wallet session scope cannot reuse stale signing/private state provider references', async () => {
+  const scope = {};
+  const provider = getBlackoutSafePrivateStateProvider(scope);
+  await provider.setSigningKey('contract-a' as never, 'secret-a' as never);
+  disposeBlackoutSafePrivateStateScope(scope);
+  let failed = false;
+  try { await provider.getSigningKey('contract-a' as never); } catch (error) {
+    failed = error instanceof Error && error.message === 'BLACKOUT_SAFE_PRIVATE_STATE_PROVIDER_DISPOSED';
+  }
+  assert(failed, 'disposed session provider must be permanently invalidated');
+  const replacement = getBlackoutSafePrivateStateProvider(scope);
+  assert(replacement !== provider, 'reconnected session must receive a fresh provider instance');
 });
 
 console.log(`\nBLACKOUT SAFE SECURITY HARDENING TESTS: ${pass} PASS / ${fail} FAIL`);
