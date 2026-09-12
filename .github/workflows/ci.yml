@@ -1,0 +1,34 @@
+name: Safe CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Protocol tests
+        run: npm test
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Compact source sanity
+        run: |
+          test -s contract/blackout_safe.compact
+          grep -q 'governance_rotate_membership' contract/blackout_safe.compact
+          grep -q 'receipt_executed_exactly_once' contract/blackout_safe.compact
+          grep -q 'execute_shielded_transfer' contract/blackout_safe.compact

@@ -1,13 +1,14 @@
 {
   "name": "blackout-safe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:m1-5 && npm run test:m6-10",
+    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15",
     "test:m1-5": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
     "test:m6-10": "node --experimental-strip-types src/safe/milestones-6-10.test.ts",
-    "typecheck": "tsc -p tsconfig.safe.json"
+    "test:m10-15": "node --experimental-strip-types src/safe/milestones-10-15.test.ts",
+    "typecheck": "tsc -p tsconfig.safe.json --noEmit"
   },
   "devDependencies": {
     "typescript": "~5.8.2"

@@ -1,7 +1,8 @@
 export type Hex32 = `0x${string}`;
 
 export type SafeStatus = 'ACTIVE' | 'PAUSED';
-export type ProposalStatus = 'PENDING' | 'CANCELLED' | 'EXECUTED';
+export type ProposalStatus = 'PENDING' | 'CANCELLED' | 'EXECUTED' | 'EXECUTION_UNCERTAIN';
+export type ProposalKind = 'TREASURY' | 'GOVERNANCE';
 export type ActionType = 'TRANSFER' | 'PAYROLL' | 'INVOICE' | 'CONTRACT_CALL' | 'GOVERNANCE';
 export type PolicyMode = 'STANDARD' | 'PRIVATE_POLICY';
 
@@ -70,6 +71,7 @@ export interface PublicProposalState {
   membershipVersion: bigint;
   policyVersion: bigint;
   approvalCount: number;
+  kind: ProposalKind;
   status: ProposalStatus;
 }
 
@@ -103,6 +105,7 @@ export interface PublicProposalReceipt {
   proposalCommitment: Hex32;
   membershipVersion: bigint;
   policyVersion: bigint;
+  kind: ProposalKind;
   status: 'PENDING';
 }
 
@@ -134,9 +137,28 @@ export interface ShieldedTransferRequest {
   amount: bigint;
 }
 
+export type RecipientDiscoveryMode =
+  | 'WALLET_NATIVE'
+  | 'EXECUTOR_ASSISTED'
+  | 'OUT_OF_BAND_REQUIRED'
+  | 'NONE';
+
+export interface ShieldedTreasuryCapabilities {
+  mode: 'LIVE' | 'REFERENCE' | 'UNAVAILABLE';
+  supportsShieldedCustody: boolean;
+  supportsShieldedSpend: boolean;
+  recipientDiscovery: RecipientDiscoveryMode;
+  returnsNetworkTransactionId: boolean;
+}
+
 export interface ShieldedTransferResult {
+  /** Adapter-level transfer reference. It is NOT necessarily a network transaction id. */
   transferId: Hex32;
   kind: 'SHIELDED';
+  mode: 'LIVE' | 'REFERENCE';
+  /** Must be null unless returned by a real Midnight submission path. */
+  networkTransactionId: Hex32 | null;
+  recipientDiscovery: RecipientDiscoveryMode;
 }
 
 export interface PublicExecutionReceipt {
@@ -150,4 +172,80 @@ export interface PublicExecutionReceipt {
   policyCompliant: true;
   quorumSatisfied: true;
   treasuryTransferId: Hex32;
+  networkTransactionId: Hex32 | null;
+  recipientDiscovery: RecipientDiscoveryMode;
+}
+
+export type GovernanceOperation =
+  | { action: 'ROTATE_MEMBERSHIP'; newMembershipRoot: Hex32 }
+  | { action: 'CHANGE_POLICY'; newPolicy: TreasuryPolicy }
+  | { action: 'PAUSE' }
+  | { action: 'RESUME' }
+  | { action: 'CANCEL_PROPOSAL'; targetProposalCommitment: Hex32 };
+
+export interface PublicGovernanceReceipt {
+  safeId: Hex32;
+  proposalCommitment: Hex32;
+  governanceAction: GovernanceOperation['action'];
+  membershipVersion: bigint;
+  policyVersion: bigint;
+  policyCommitment: Hex32;
+  membershipRoot: Hex32;
+  safeStatus: SafeStatus;
+  status: 'EXECUTED';
+  cancelledProposalCommitment?: Hex32;
+}
+
+export type BlackoutReceiptStatementType =
+  | 'QUORUM_AUTHORIZED'
+  | 'POLICY_COMPLIANT_EXECUTION'
+  | 'EXECUTED_EXACTLY_ONCE'
+  | 'MEMBERSHIP_ROTATED'
+  | 'POLICY_CHANGED'
+  | 'SAFE_PAUSED'
+  | 'SAFE_RESUMED'
+  | 'PROPOSAL_CANCELLED';
+
+export interface BlackoutReceiptDisclosures {
+  amount?: bigint;
+  recipient?: Hex32;
+  executedAt?: bigint;
+  proposalType?: ActionType;
+}
+
+export interface BlackoutReceiptPublicInputs {
+  proposalCommitment?: Hex32;
+  executionNullifier?: Hex32;
+  membershipRoot?: Hex32;
+  policyCommitment?: Hex32;
+  safeStatus?: SafeStatus;
+  cancelledProposalCommitment?: Hex32;
+}
+
+export interface BlackoutReceiptEnvelope {
+  protocol: 'blackout-safe';
+  version: 1;
+  proofSystem: 'REFERENCE_ONLY' | 'MIDNIGHT';
+  safeId: Hex32;
+  statementType: BlackoutReceiptStatementType;
+  statementCommitment: Hex32;
+  membershipVersion: bigint;
+  policyVersion: bigint;
+  publicInputs: BlackoutReceiptPublicInputs;
+  disclosures: BlackoutReceiptDisclosures;
+  /** Null in reference-only mode. LIVE verification must reject null proofs. */
+  proof: string | null;
+}
+
+export interface ReceiptVerificationResult {
+  valid: boolean;
+  cryptographicallyVerified: boolean;
+  code:
+    | 'MIDNIGHT_PROOF_VERIFIED'
+    | 'REFERENCE_INTEGRITY_ONLY'
+    | 'REFERENCE_PROOF_NOT_ACCEPTED'
+    | 'RECEIPT_INTEGRITY_MISMATCH'
+    | 'MISSING_MIDNIGHT_PROOF'
+    | 'MIDNIGHT_VERIFIER_UNAVAILABLE'
+    | 'MIDNIGHT_PROOF_INVALID';
 }
