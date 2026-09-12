@@ -33,6 +33,9 @@ BLACKOUT SAFE is a confidential organizational treasury protocol built around pr
 - executed-exactly-once receipt
 - selective amount / recipient disclosure circuits
 - historical quorum receipt opens against the proposal's original policy commitment after later policy rotation
+- runtime receipt-envelope validation before proof-verifier invocation
+- malformed Hex32/public input/disclosure shapes fail closed
+- `REFERENCE_ONLY` receipts cannot smuggle a purported cryptographic proof
 - reference receipts are rejected by LIVE verification
 - missing/unavailable real Midnight proof verification fails closed
 
@@ -63,10 +66,12 @@ BLACKOUT SAFE is a confidential organizational treasury protocol built around pr
 - all browser ZK assets are pinned to the app's same-origin `/zk-artifacts/blackout-safe` path
 - callers cannot redirect LIVE proving to an arbitrary external artifact host
 
-### Hardened release gate
+### Hardened release / CI gate
 - fake deployment IDs fail closed
 - 64-hex-looking IDs alone do not count as Preview deployment proof
 - Preview promotion additionally requires `networkId=preview`, finalization and explicit on-chain/indexer verification
+- Compact bootstrap repository pinned to audited commit `5cfbfd0929e7a7bd2674b21b7769b4a35106e25c`
+- checked-out toolchain commit and Compact/ledger/runtime versions verified before generation
 - production can never be automatically approved
 - manual security/privacy review remains mandatory before any production/mainnet release
 
@@ -79,8 +84,8 @@ Final hardening branch verification target:
 - proposal privacy: **2 tests**
 - M15–M20 final adversarial/integration gate: **11 tests**
 - ephemeral witness boundary: **2 tests**
-- final security hardening: **10 tests**
-- total: **89 tests**
+- final security hardening: **12 tests**
+- total: **91 tests**
 - strict TypeScript: **required PASS**
 - Compact source compile: **required PASS**
 - full ZKIR/prover/verifier generation for 15 exported circuits: **required PASS**
