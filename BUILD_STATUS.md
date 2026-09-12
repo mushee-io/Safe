@@ -77,16 +77,24 @@ Reference harness:
 
 Real multi-wallet Preview run: **NOT YET PERFORMED**.
 
-## Milestone 20 — release gate
+## Milestone 20 — release / receipt gate
 
 - fake deployment IDs rejected: **PASS**
 - 64-hex-looking IDs alone are insufficient: **PASS**
 - finalized Preview network evidence required: **PASS**
 - explicit on-chain/indexer deployment verification required: **PASS**
+- malformed Blackout Receipt envelopes rejected before proof verification: **PASS**
+- `REFERENCE_ONLY` receipt cannot carry a pretend LIVE proof: **PASS**
 - compiler/tests/integration evidence required before Preview deploy: **PASS**
 - missing Preview evidence remains explicit blocker: **PASS**
 - production cannot be auto-approved: **PASS**
 - manual security/privacy review remains mandatory: **PASS**
+
+## CI / supply-chain hardening
+
+- external Compact bootstrap repository pinned to audited commit `5cfbfd0929e7a7bd2674b21b7769b4a35106e25c`: **PASS**
+- checked-out toolchain `HEAD` verified before use: **PASS**
+- Compact version / ledger / runtime verified before generation: **PASS**
 
 ## Verification
 
@@ -97,13 +105,13 @@ Final hardening verification target on this branch:
 - proposal privacy: **2 tests**
 - M15–20 final tests: **11 tests**
 - ephemeral witness tests: **2 tests**
-- final security hardening: **10 tests**
-- **TOTAL: 89 tests**
+- final security hardening: **12 tests**
+- **TOTAL: 91 tests**
 - strict TypeScript: **required PASS**
 - generated Safe binding TypeScript integration: **required PASS**
 - full Compact ZK artifact generation: **required PASS**
 
-The exact branch head is not eligible for `main` until CI verifies all 89 tests, strict TypeScript, the 15-circuit full ZK build, browser artifact staging and generated artifact upload.
+The exact branch head is not eligible for `main` until CI verifies all 91 tests, strict TypeScript, the 15-circuit full ZK build, browser artifact staging and generated artifact upload.
 
 ## Current release stage
 
