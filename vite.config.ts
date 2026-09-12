@@ -1,11 +1,10 @@
 import { defineConfig } from 'vite';
-import topLevelAwait from 'vite-plugin-top-level-await';
 import wasm from 'vite-plugin-wasm';
 
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait()],
+  plugins: [wasm()],
   build: {
-    target: 'es2022',
+    target: 'esnext',
     outDir: 'dist',
     sourcemap: true,
   },
@@ -15,5 +14,8 @@ export default defineConfig({
   optimizeDeps: {
     include: ['buffer'],
     exclude: ['@midnight-ntwrk/onchain-runtime-v3'],
+    esbuildOptions: {
+      target: 'esnext',
+    },
   },
 });
