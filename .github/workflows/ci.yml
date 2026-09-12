@@ -39,6 +39,17 @@ jobs:
           .blackout-toolchain/bin/compact compile --version
           .blackout-toolchain/bin/compact compile --ledger-version
           .blackout-toolchain/bin/compact compile --runtime-version
+      - name: Apply candidate Compact fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('contract/blackout_safe.compact')
+          s = p.read_text()
+          old = '  assert(blockTimeGte(disclose(payload.created_at + policy.min_execution_delay)), "BLACKOUT_SAFE_EXECUTION_DELAY");'
+          new = '  const execute_after = (payload.created_at + policy.min_execution_delay) as Uint<64>;\n  assert(blockTimeGte(disclose(execute_after)), "BLACKOUT_SAFE_EXECUTION_DELAY");'
+          assert old in s, 'expected execution-window source not found'
+          p.write_text(s.replace(old, new))
+          PY
       - name: Compile Safe Compact
         run: |
           rm -rf contract/build-safe
