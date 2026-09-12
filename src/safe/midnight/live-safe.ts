@@ -6,6 +6,11 @@ import {
 } from './compiled-safe-contract.ts';
 import { BLACKOUT_SAFE_PRIVATE_STATE_ID } from './private-state.ts';
 import { buildBlackoutSafeProviders, safeMidnightError } from './providers.ts';
+import {
+  assertCircuitArity,
+  assertNetworkIdentifier,
+  resolvePinnedAssetBaseUrl,
+} from './security-hardening.ts';
 import { getActiveSafeLaceSession, type SafeLaceSession } from './wallet-session.ts';
 
 export type BlackoutSafeCircuitId =
@@ -25,6 +30,24 @@ export type BlackoutSafeCircuitId =
   | 'receipt_disclose_recipient'
   | 'receipt_proposal_cancelled';
 
+const CIRCUIT_ARITY: Readonly<Record<BlackoutSafeCircuitId, number>> = {
+  propose_private: 1,
+  approve_private: 1,
+  prove_quorum: 1,
+  deposit_shielded: 1,
+  execute_shielded_transfer: 1,
+  governance_pause: 1,
+  governance_resume: 1,
+  governance_cancel_proposal: 2,
+  governance_rotate_membership: 2,
+  governance_change_policy: 1,
+  receipt_quorum_authorized: 1,
+  receipt_executed_exactly_once: 1,
+  receipt_disclose_amount: 1,
+  receipt_disclose_recipient: 1,
+  receipt_proposal_cancelled: 1,
+};
+
 export interface DeployBlackoutSafeInput {
   session?: SafeLaceSession;
   safeId: Uint8Array;
@@ -34,7 +57,6 @@ export interface DeployBlackoutSafeInput {
   standardRequiredQuorum: bigint;
   /** Constructor does not consume private witnesses, but the compiled wrapper requires callbacks. */
   witnesses?: BlackoutSafeWitnesses;
-  zkAssetBaseUrl?: string;
 }
 
 export interface SubmitBlackoutSafeCallInput {
@@ -43,7 +65,6 @@ export interface SubmitBlackoutSafeCallInput {
   circuitId: BlackoutSafeCircuitId;
   args: readonly unknown[];
   witnesses: BlackoutSafeWitnesses;
-  zkAssetBaseUrl?: string;
 }
 
 const unavailable = () => {
@@ -67,14 +88,23 @@ function require32(label: string, value: Uint8Array): void {
   }
 }
 
-function requireContractAddress(address: string): void {
-  if (!/^[0-9a-f]{64}$/i.test(address)) throw new Error('BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS');
-}
-
 function requireSession(session?: SafeLaceSession): SafeLaceSession {
   const active = session ?? getActiveSafeLaceSession();
   if (!active) throw new Error('BLACKOUT_SAFE_LACE_SESSION_REQUIRED');
   return active;
+}
+
+function safeBlockHeight(value: unknown): number {
+  const blockHeight = Number(value);
+  if (!Number.isSafeInteger(blockHeight) || blockHeight < 0) {
+    throw new Error('BLACKOUT_SAFE_INVALID_BLOCK_HEIGHT');
+  }
+  return blockHeight;
+}
+
+function pinnedAssetBaseUrl(): string {
+  if (typeof window === 'undefined') throw new Error('BLACKOUT_SAFE_BROWSER_REQUIRED');
+  return resolvePinnedAssetBaseUrl(BLACKOUT_SAFE_ZK_ASSET_PATH, window.location.origin);
 }
 
 export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
@@ -90,8 +120,8 @@ export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
 
   const session = requireSession(input.session);
   try {
-    const assetBaseUrl = input.zkAssetBaseUrl ?? BLACKOUT_SAFE_ZK_ASSET_PATH;
-    const providers = await buildBlackoutSafeProviders(session, assetBaseUrl);
+    const assetBaseUrl = pinnedAssetBaseUrl();
+    const providers = await buildBlackoutSafeProviders(session);
     const compiledContract = makeBlackoutSafeCompiledContract(
       input.witnesses ?? unavailableBlackoutSafeWitnesses(),
       assetBaseUrl,
@@ -110,9 +140,15 @@ export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
     } as any);
 
     return {
-      contractAddress: String(deployed.deployTxData.public.contractAddress),
-      txId: String(deployed.deployTxData.public.txId),
-      blockHeight: Number(deployed.deployTxData.public.blockHeight),
+      contractAddress: assertNetworkIdentifier(
+        String(deployed.deployTxData.public.contractAddress),
+        'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS',
+      ),
+      txId: assertNetworkIdentifier(
+        String(deployed.deployTxData.public.txId),
+        'BLACKOUT_SAFE_INVALID_DEPLOYMENT_TX_ID',
+      ),
+      blockHeight: safeBlockHeight(deployed.deployTxData.public.blockHeight),
       networkId: 'preview' as const,
     };
   } catch (error) {
@@ -121,23 +157,24 @@ export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
 }
 
 export async function submitBlackoutSafeCall(input: SubmitBlackoutSafeCallInput) {
-  requireContractAddress(input.contractAddress);
+  const contractAddress = assertNetworkIdentifier(input.contractAddress, 'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS');
+  assertCircuitArity(input.circuitId, input.args, CIRCUIT_ARITY);
   const session = requireSession(input.session);
   try {
-    const assetBaseUrl = input.zkAssetBaseUrl ?? BLACKOUT_SAFE_ZK_ASSET_PATH;
-    const providers = await buildBlackoutSafeProviders(session, assetBaseUrl);
+    const assetBaseUrl = pinnedAssetBaseUrl();
+    const providers = await buildBlackoutSafeProviders(session);
     const compiledContract = makeBlackoutSafeCompiledContract(input.witnesses, assetBaseUrl);
     const result = await submitCallTx(providers as any, {
       compiledContract,
-      contractAddress: input.contractAddress,
+      contractAddress,
       circuitId: input.circuitId,
       args: [...input.args],
       privateStateId: BLACKOUT_SAFE_PRIVATE_STATE_ID,
     } as any);
 
     return {
-      txId: String(result.public.txId),
-      blockHeight: Number(result.public.blockHeight),
+      txId: assertNetworkIdentifier(String(result.public.txId), 'BLACKOUT_SAFE_INVALID_CALL_TX_ID'),
+      blockHeight: safeBlockHeight(result.public.blockHeight),
       circuitId: input.circuitId,
       networkId: 'preview' as const,
     };
