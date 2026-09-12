@@ -1,0 +1,16 @@
+{
+  "name": "blackout-safe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
+    "typecheck": "tsc -p tsconfig.safe.json"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

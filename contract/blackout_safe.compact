@@ -1,0 +1,156 @@
+// BLACKOUT SAFE — Milestones 1–5 contract core
+// Target repository toolchain: compactc 0.31.1 / language 0.23.0 / runtime 0.16.0.
+// IMPORTANT: this file has not yet been compiled in this isolated workspace because
+// the repository's Compact binary cannot be materialized here. Do not mark compile PASS.
+
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+
+export struct ProposalRecord {
+  membership_version: Uint<64>;
+  policy_version: Uint<64>;
+  approval_count: Uint<64>;
+  active: Boolean;
+}
+
+export struct PrivateProposalPayload {
+  action_type: Bytes<32>;
+  asset: Bytes<32>;
+  recipient: Bytes<32>;
+  amount: Uint<64>;
+  calldata_or_action: Bytes<32>;
+  memo_hash: Bytes<32>;
+  created_at: Uint<64>;
+  expires_at: Uint<64>;
+  nonce: Bytes<32>;
+  salt: Bytes<32>;
+}
+
+// PUBLIC STATE. These values intentionally reveal protocol state, not treasury intelligence.
+export sealed ledger safe_id: Bytes<32>;
+export sealed ledger required_quorum: Uint<64>;
+export sealed ledger policy_commitment: Bytes<32>;
+export ledger membership_version: Uint<64>;
+export ledger policy_version: Uint<64>;
+export ledger paused: Boolean;
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger proposals: Map<Bytes<32>, ProposalRecord>;
+export ledger approval_nullifiers: Set<Bytes<32>>;
+
+// PRIVATE LOCAL/WITNESS STATE. Implementations must back these with local private state.
+witness local_member_secret(): Bytes<32>;
+witness local_member_path(member_commitment: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>;
+witness local_private_proposal(): PrivateProposalPayload;
+
+circuit member_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "blackout:safe:member:v1"),
+    secret
+  ]);
+}
+
+circuit proposal_nullifier(secret: Bytes<32>, proposal_commitment: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "blackout:safe:approval:v1"),
+    safe_id,
+    proposal_commitment,
+    secret
+  ]));
+}
+
+circuit private_proposal_commitment(payload: PrivateProposalPayload): Bytes<32> {
+  return persistentHash<[
+    Bytes<32>, Bytes<32>, Bytes<32>, Bytes<32>, Uint<64>, Bytes<32>, Bytes<32>, Uint<64>, Uint<64>, Bytes<32>, Bytes<32>, Bytes<32>
+  ]>([
+    pad(32, "blackout:safe:proposal:v1"),
+    safe_id,
+    payload.action_type,
+    payload.asset,
+    payload.amount,
+    payload.recipient,
+    payload.calldata_or_action,
+    payload.created_at,
+    payload.expires_at,
+    payload.nonce,
+    payload.memo_hash,
+    payload.salt
+  ]);
+}
+
+circuit require_current_member(secret: Bytes<32>): [] {
+  const member = member_commitment(secret);
+  const path = local_member_path(member);
+  assert(
+    disclose(path.is_some) &&
+    members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path.value))) &&
+    member == path.value.leaf,
+    "BLACKOUT_SAFE_NOT_AUTHORIZED"
+  );
+}
+
+constructor(
+  initial_safe_id: Bytes<32>,
+  initial_required_quorum: Uint<64>,
+  initial_policy_commitment: Bytes<32>
+) {
+  assert(initial_required_quorum > 0, "BLACKOUT_SAFE_INVALID_QUORUM");
+  safe_id = disclose(initial_safe_id);
+  required_quorum = disclose(initial_required_quorum);
+  policy_commitment = disclose(initial_policy_commitment);
+  membership_version = 1;
+  policy_version = 1;
+  paused = false;
+
+  // Founder leaf remains private: MerkleTree.insert is the special ledger operation
+  // designed to hide its leaf input. The derived member commitment is not disclosed.
+  const founder = member_commitment(local_member_secret());
+  members.insert(founder);
+}
+
+// Milestone 5: create only a public commitment to the private proposal payload.
+export circuit propose_private(expected_commitment: Bytes<32>): [] {
+  assert(!paused, "BLACKOUT_SAFE_PAUSED");
+  const secret = local_member_secret();
+  require_current_member(secret);
+
+  const payload = local_private_proposal();
+  assert(payload.expires_at > payload.created_at, "BLACKOUT_SAFE_INVALID_EXPIRY");
+  const computed = private_proposal_commitment(payload);
+  assert(computed == expected_commitment, "BLACKOUT_SAFE_PROPOSAL_COMMITMENT_MISMATCH");
+  assert(!proposals.member(disclose(expected_commitment)), "BLACKOUT_SAFE_PROPOSAL_EXISTS");
+
+  proposals.insert(disclose(expected_commitment), ProposalRecord {
+    membership_version: membership_version,
+    policy_version: policy_version,
+    approval_count: 0,
+    active: true
+  });
+}
+
+// Milestones 3–4: anonymous authorization + proposal-scoped nullifier.
+export circuit approve_private(proposal_commitment: Bytes<32>): Boolean {
+  assert(!paused, "BLACKOUT_SAFE_PAUSED");
+  assert(proposals.member(disclose(proposal_commitment)), "BLACKOUT_SAFE_UNKNOWN_PROPOSAL");
+
+  const proposal = proposals.lookup(disclose(proposal_commitment));
+  assert(proposal.active, "BLACKOUT_SAFE_PROPOSAL_NOT_ACTIVE");
+  assert(proposal.membership_version == membership_version, "BLACKOUT_SAFE_STALE_MEMBERSHIP");
+  assert(proposal.policy_version == policy_version, "BLACKOUT_SAFE_STALE_POLICY");
+
+  const secret = local_member_secret();
+  require_current_member(secret);
+
+  const nullifier = proposal_nullifier(secret, proposal_commitment);
+  assert(!approval_nullifiers.member(nullifier), "BLACKOUT_SAFE_DUPLICATE_APPROVAL");
+  approval_nullifiers.insert(nullifier);
+
+  const next_count = proposal.approval_count + 1;
+  proposals.insert(disclose(proposal_commitment), ProposalRecord {
+    membership_version: proposal.membership_version,
+    policy_version: proposal.policy_version,
+    approval_count: next_count,
+    active: proposal.active
+  });
+
+  return disclose(next_count >= required_quorum);
+}
