@@ -137,12 +137,47 @@ export class BlackoutSafeReferenceEngine {
     return candidate;
   }
 
+  private async resolveProposalPolicy(
+    proposal: PublicProposalState,
+    opening?: TreasuryPolicy,
+  ): Promise<TreasuryPolicy> {
+    const isCurrent =
+      proposal.membershipVersion === this.#state.membershipVersion &&
+      proposal.policyVersion === this.#state.policyVersion &&
+      proposal.policyCommitment === this.#state.policyCommitment;
+    const candidate = opening ?? (isCurrent ? this.#activePolicy : undefined);
+    if (!candidate) {
+      throw new SafeProtocolError(
+        'HISTORICAL_POLICY_OPENING_REQUIRED',
+        'historical quorum proof requires the policy opening committed when the proposal was created',
+      );
+    }
+    if (candidate.membershipVersion !== proposal.membershipVersion) {
+      throw new SafeProtocolError('HISTORICAL_POLICY_MEMBERSHIP_MISMATCH', 'historical policy opening has the wrong membership version');
+    }
+    if (candidate.policyVersion !== proposal.policyVersion) {
+      throw new SafeProtocolError('HISTORICAL_POLICY_VERSION_MISMATCH', 'historical policy opening has the wrong policy version');
+    }
+    try {
+      await assertPolicyOpening(candidate, proposal.policyCommitment);
+    } catch (error) {
+      throw new SafeProtocolError(
+        'HISTORICAL_POLICY_COMMITMENT_MISMATCH',
+        error instanceof Error ? error.message : 'historical policy commitment mismatch',
+      );
+    }
+    return candidate;
+  }
+
   private requireProposalCurrent(proposal: PublicProposalState): void {
     if (proposal.membershipVersion !== this.#state.membershipVersion) {
       throw new SafeProtocolError('PROPOSAL_STALE_MEMBERSHIP', 'proposal was created under another membership version');
     }
     if (proposal.policyVersion !== this.#state.policyVersion) {
       throw new SafeProtocolError('PROPOSAL_STALE_POLICY', 'proposal was created under another policy version');
+    }
+    if (proposal.policyCommitment !== this.#state.policyCommitment) {
+      throw new SafeProtocolError('PROPOSAL_STALE_POLICY_COMMITMENT', 'proposal was created under another policy commitment');
     }
   }
 
@@ -155,6 +190,12 @@ export class BlackoutSafeReferenceEngine {
   }
 
   async propose(payload: PrivateProposalPayload, member: PrivateMemberMaterial): Promise<PublicProposalReceipt> {
+    if (payload.actionType !== 'TRANSFER' && payload.actionType !== 'GOVERNANCE') {
+      throw new SafeProtocolError(
+        'UNSUPPORTED_ACTION_TYPE',
+        'current Blackout Safe contract supports canonical TRANSFER and GOVERNANCE proposal actions only',
+      );
+    }
     const kind: PrivateProposalKind = payload.actionType === 'GOVERNANCE' ? 'GOVERNANCE' : 'TREASURY';
     if (this.#state.status !== 'ACTIVE' && kind !== 'GOVERNANCE') {
       throw new SafeProtocolError('SAFE_PAUSED', 'safe is paused for treasury actions');
@@ -192,6 +233,7 @@ export class BlackoutSafeReferenceEngine {
       proposalCommitment,
       membershipVersion: this.#state.membershipVersion,
       policyVersion: this.#state.policyVersion,
+      policyCommitment: this.#state.policyCommitment,
       approvalCount: 0,
       status: 'PENDING',
     });
@@ -245,6 +287,26 @@ export class BlackoutSafeReferenceEngine {
     const policy = await this.resolvePolicy(policyOpening);
     if (proposal.approvalCount < policy.threshold) {
       throw new SafeProtocolError('QUORUM_NOT_REACHED', 'valid unique approvals do not satisfy the active policy');
+    }
+    return {
+      safeId: this.#state.safeId,
+      proposalCommitment,
+      membershipVersion: proposal.membershipVersion,
+      policyVersion: proposal.policyVersion,
+      statement: 'QUORUM_AUTHORIZED',
+      valid: true,
+    };
+  }
+
+  async proveHistoricalQuorum(
+    proposalCommitment: Hex32,
+    policyOpening?: TreasuryPolicy,
+  ): Promise<PublicQuorumReceipt> {
+    const proposal = this.#proposals.get(proposalCommitment);
+    if (!proposal) throw new SafeProtocolError('UNKNOWN_PROPOSAL', 'proposal does not exist');
+    const policy = await this.resolveProposalPolicy(proposal, policyOpening);
+    if (proposal.approvalCount < policy.threshold) {
+      throw new SafeProtocolError('QUORUM_NOT_REACHED', 'valid unique approvals do not satisfy the proposal policy snapshot');
     }
     return {
       safeId: this.#state.safeId,
