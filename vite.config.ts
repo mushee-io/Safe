@@ -1,8 +1,7 @@
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import wasm from 'vite-plugin-wasm';
 
-const browserWebSocketShim = fileURLToPath(new URL('./src/web/shims/isomorphic-ws.ts', import.meta.url));
+const browserWebSocketShim = new URL('./src/web/shims/isomorphic-ws.ts', import.meta.url).pathname;
 
 export default defineConfig({
   plugins: [wasm()],
