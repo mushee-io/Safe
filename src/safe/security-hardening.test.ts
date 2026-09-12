@@ -1,6 +1,7 @@
 import { buildMembershipTree, deriveMemberCommitment, domainHash } from './crypto.ts';
-import type { PrivateMemberMaterial, PrivateProposalPayload, TreasuryPolicy } from './model.ts';
+import type { BlackoutReceiptEnvelope, PrivateMemberMaterial, PrivateProposalPayload, TreasuryPolicy } from './model.ts';
 import { BlackoutSafeReferenceEngine, SafeProtocolError } from './reference-engine.ts';
+import { buildQuorumReferenceReceipt, verifyBlackoutReceipt } from './receipts.ts';
 import {
   assertCircuitArity,
   assertSafeEndpointUri,
@@ -215,6 +216,32 @@ await test('H10 disposed wallet session scope cannot reuse stale signing/private
   assert(failed, 'disposed session provider must be permanently invalidated');
   const replacement = getBlackoutSafePrivateStateProvider(scope);
   assert(replacement !== provider, 'reconnected session must receive a fresh provider instance');
+});
+
+await test('H11 malformed receipt identifiers are rejected before a proof verifier is invoked', async () => {
+  const f = await referenceFixture();
+  const proposal = await f.engine.propose(f.payload, f.member);
+  await f.engine.approve(proposal.proposalCommitment, f.member);
+  const quorum = await f.engine.proveQuorum(proposal.proposalCommitment);
+  const receipt = await buildQuorumReferenceReceipt(quorum);
+  const malformed = { ...receipt, safeId: '0x1234' } as BlackoutReceiptEnvelope;
+  let verifierCalled = false;
+  const result = await verifyBlackoutReceipt(malformed, {
+    async verifyReceipt() { verifierCalled = true; return true; },
+  }, 'LIVE');
+  assert(!result.valid && result.code === 'RECEIPT_INTEGRITY_MISMATCH', 'malformed receipt must fail integrity');
+  assert(!verifierCalled, 'proof verifier must not see malformed receipt data');
+});
+
+await test('H12 reference receipts cannot smuggle a purported proof into LIVE verification', async () => {
+  const f = await referenceFixture();
+  const proposal = await f.engine.propose(f.payload, f.member);
+  await f.engine.approve(proposal.proposalCommitment, f.member);
+  const quorum = await f.engine.proveQuorum(proposal.proposalCommitment);
+  const receipt = await buildQuorumReferenceReceipt(quorum);
+  const smuggled = { ...receipt, proof: 'pretend-proof' } as BlackoutReceiptEnvelope;
+  const result = await verifyBlackoutReceipt(smuggled, { async verifyReceipt() { return true; } }, 'LIVE');
+  assert(!result.valid && result.code === 'RECEIPT_INTEGRITY_MISMATCH', 'reference receipt with fake proof must fail closed');
 });
 
 console.log(`\nBLACKOUT SAFE SECURITY HARDENING TESTS: ${pass} PASS / ${fail} FAIL`);
