@@ -14,7 +14,7 @@ interface ScopedProviderRecord {
 
 const scopedProviders = new WeakMap<object, ScopedProviderRecord>();
 
-export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvider {
+function buildProviderRecord(): ScopedProviderRecord {
   const states = new Map<string, BlackoutSafePrivateState>();
   const signingKeys = new Map<string, SigningKey>();
   let contractAddress = '';
@@ -25,12 +25,12 @@ export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvid
   };
   const scopedKey = (id: string) => `${contractAddress}:${id}`;
 
-  return {
+  const provider = {
     setContractAddress(address: ContractAddress) {
       assertUsable();
       contractAddress = String(address);
     },
-    async get(id) {
+    async get(id: string) {
       assertUsable();
       const key = scopedKey(id);
       const existing = states.get(key);
@@ -42,11 +42,11 @@ export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvid
       }
       return null;
     },
-    async set(id, state) {
+    async set(id: string, state: BlackoutSafePrivateState) {
       assertUsable();
       states.set(scopedKey(id), state);
     },
-    async remove(id) {
+    async remove(id: string) {
       assertUsable();
       states.delete(scopedKey(id));
     },
@@ -54,15 +54,15 @@ export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvid
       assertUsable();
       states.clear();
     },
-    async setSigningKey(address, signingKey) {
+    async setSigningKey(address: ContractAddress, signingKey: SigningKey) {
       assertUsable();
       signingKeys.set(String(address), signingKey);
     },
-    async getSigningKey(address) {
+    async getSigningKey(address: ContractAddress) {
       assertUsable();
       return signingKeys.get(String(address)) ?? null;
     },
-    async removeSigningKey(address) {
+    async removeSigningKey(address: ContractAddress) {
       assertUsable();
       signingKeys.delete(String(address));
     },
@@ -83,20 +83,21 @@ export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvid
       throw new Error('BLACKOUT_SAFE_SIGNING_KEY_IMPORT_DISABLED');
     },
   } as SafePrivateStateProvider;
-}
 
-function createScopedRecord(): ScopedProviderRecord {
-  const provider = createBlackoutSafePrivateStateProvider();
-  let disposed = false;
   return {
     provider,
     dispose() {
       if (disposed) return;
+      states.clear();
+      signingKeys.clear();
+      contractAddress = '';
       disposed = true;
-      void provider.clear().catch(() => undefined);
-      void provider.clearSigningKeys().catch(() => undefined);
     },
   };
+}
+
+export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvider {
+  return buildProviderRecord().provider;
 }
 
 /**
@@ -107,7 +108,7 @@ function createScopedRecord(): ScopedProviderRecord {
 export function getBlackoutSafePrivateStateProvider(scope: object): SafePrivateStateProvider {
   const existing = scopedProviders.get(scope);
   if (existing) return existing.provider;
-  const created = createScopedRecord();
+  const created = buildProviderRecord();
   scopedProviders.set(scope, created);
   return created.provider;
 }
