@@ -71,10 +71,50 @@ jobs:
               '  assert(next.policy_version == policy_version + 1, "BLACKOUT_SAFE_NEW_POLICY_VERSION_INVALID");',
               '  assert(policy_version != 18446744073709551615, "BLACKOUT_SAFE_POLICY_VERSION_OVERFLOW");\n  const next_policy_version = (policy_version + 1) as Uint<64>;\n  assert(next.policy_version == next_policy_version, "BLACKOUT_SAFE_NEW_POLICY_VERSION_INVALID");'
             ),
+            (
+              '  is_governance: Boolean;\n',
+              ''
+            ),
+            (
+              '    is_governance: governance,\n',
+              ''
+            ),
+            (
+              '  if (paused) { assert(proposal.is_governance, "BLACKOUT_SAFE_PAUSED"); }',
+              '  if (paused) {\n    const recovery_payload = local_private_proposal();\n    assert(private_proposal_commitment(recovery_payload) == proposal_commitment, "BLACKOUT_SAFE_PAUSED_RECOVERY_PAYLOAD_MISMATCH");\n    assert(disclose(is_governance_payload(recovery_payload)), "BLACKOUT_SAFE_PAUSED");\n  }'
+            ),
+            (
+              '    is_governance: proposal.is_governance,\n',
+              ''
+            ),
+            (
+              '  assert(!proposal.is_governance, "BLACKOUT_SAFE_NOT_TREASURY_PROPOSAL");\n',
+              ''
+            ),
+            (
+              '    is_governance: false,\n',
+              ''
+            ),
+            (
+              '  assert(proposal.is_governance, "BLACKOUT_SAFE_NOT_GOVERNANCE_PROPOSAL");\n',
+              ''
+            ),
+            (
+              '    is_governance: true,\n',
+              ''
+            ),
+            (
+              '    is_governance: target.is_governance,\n',
+              ''
+            ),
+            (
+              '  policy_version = next.policy_version;\n  policy_is_private = next.is_private;\n  if (next.is_private) {\n    standard_required_quorum = 0;\n  } else {\n    standard_required_quorum = next.threshold;\n  }',
+              '  policy_version = disclose(next.policy_version);\n  policy_is_private = disclose(next.is_private);\n  if (disclose(next.is_private)) {\n    standard_required_quorum = 0;\n  } else {\n    standard_required_quorum = disclose(next.threshold);\n  }'
+            ),
           ]
 
           for old, new in replacements:
-            assert old in s, f'expected source not found: {old[:80]}'
+            assert old in s, f'expected source not found: {old[:100]}'
             s = s.replace(old, new)
           p.write_text(s)
           PY
