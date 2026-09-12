@@ -12,7 +12,7 @@ permissions:
 jobs:
   protocol:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout Safe
         uses: actions/checkout@v4
@@ -26,20 +26,27 @@ jobs:
         run: npm test
       - name: TypeScript
         run: npm run typecheck
-      - name: Checkout Blackout Compact toolchain
+      - name: Checkout Blackout Compact devtools
         uses: actions/checkout@v4
         with:
           repository: mushee-io/Balckout-Pay
           path: .blackout-toolchain
-      - name: Inspect Compact binary
+      - name: Pin Compact toolchain 0.31.1
         run: |
           chmod +x .blackout-toolchain/bin/compact
-          .blackout-toolchain/bin/compact --version || true
+          .blackout-toolchain/bin/compact --version
+          .blackout-toolchain/bin/compact update 0.31.1
+          .blackout-toolchain/bin/compact compile --version
+          .blackout-toolchain/bin/compact compile --ledger-version
+          .blackout-toolchain/bin/compact compile --runtime-version
       - name: Compile Safe Compact
         run: |
           rm -rf contract/build-safe
           .blackout-toolchain/bin/compact compile contract/blackout_safe.compact contract/build-safe
           test -f contract/build-safe/compiler/contract-info.json
+      - name: Verify compiler metadata
+        run: |
+          node -e "const f=require('./contract/build-safe/compiler/contract-info.json'); if(f['compiler-version']!=='0.31.1') throw new Error('wrong compiler '+f['compiler-version']); if(f['language-version']!=='0.23.0') throw new Error('wrong language '+f['language-version']); if(f['runtime-version']!=='0.16.0') throw new Error('wrong runtime '+f['runtime-version']); console.log(f)"
       - name: Compact artifact sanity
         run: |
           test -d contract/build-safe/contract
