@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,24 +12,36 @@ permissions:
 jobs:
   protocol:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Checkout
+      - name: Checkout Safe
         uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
       - name: Install
         run: npm install --no-audit --no-fund
       - name: Protocol tests
         run: npm test
       - name: TypeScript
         run: npm run typecheck
-      - name: Compact source sanity
+      - name: Checkout Blackout Compact toolchain
+        uses: actions/checkout@v4
+        with:
+          repository: mushee-io/Balckout-Pay
+          path: .blackout-toolchain
+      - name: Inspect Compact binary
         run: |
-          test -s contract/blackout_safe.compact
-          grep -q 'governance_rotate_membership' contract/blackout_safe.compact
-          grep -q 'receipt_executed_exactly_once' contract/blackout_safe.compact
-          grep -q 'execute_shielded_transfer' contract/blackout_safe.compact
+          chmod +x .blackout-toolchain/bin/compact
+          .blackout-toolchain/bin/compact --version || true
+      - name: Compile Safe Compact
+        run: |
+          rm -rf contract/build-safe
+          .blackout-toolchain/bin/compact compile contract/blackout_safe.compact contract/build-safe
+          test -f contract/build-safe/compiler/contract-info.json
+      - name: Compact artifact sanity
+        run: |
+          test -d contract/build-safe/contract
+          test -d contract/build-safe/zkir
+          test -d contract/build-safe/keys
