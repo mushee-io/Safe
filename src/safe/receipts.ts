@@ -1,5 +1,6 @@
 import { domainHash } from './crypto.ts';
 import type {
+  ActionType,
   BlackoutReceiptDisclosures,
   BlackoutReceiptEnvelope,
   BlackoutReceiptPublicInputs,
@@ -19,6 +20,102 @@ export class ReceiptError extends Error {
     super(message);
     this.code = code;
     this.name = 'ReceiptError';
+  }
+}
+
+const STATEMENT_TYPES = new Set<BlackoutReceiptStatementType>([
+  'QUORUM_AUTHORIZED',
+  'POLICY_COMPLIANT_EXECUTION',
+  'EXECUTED_EXACTLY_ONCE',
+  'MEMBERSHIP_ROTATED',
+  'POLICY_CHANGED',
+  'SAFE_PAUSED',
+  'SAFE_RESUMED',
+  'PROPOSAL_CANCELLED',
+]);
+const ACTION_TYPES = new Set<ActionType>(['TRANSFER', 'PAYROLL', 'INVOICE', 'CONTRACT_CALL', 'GOVERNANCE']);
+
+function isHex32(value: unknown): value is Hex32 {
+  return typeof value === 'string' && /^0x[0-9a-f]{64}$/i.test(value);
+}
+
+function assertOptionalHex32(value: unknown, label: string): void {
+  if (value !== undefined && !isHex32(value)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', `${label} must be a 32-byte hex value`);
+  }
+}
+
+function assertReceiptShape(receipt: BlackoutReceiptEnvelope): void {
+  if (!receipt || typeof receipt !== 'object') {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'receipt must be an object');
+  }
+  if (receipt.protocol !== 'blackout-safe' || receipt.version !== 1) {
+    throw new ReceiptError('UNSUPPORTED_RECEIPT', 'unsupported Blackout Safe receipt format');
+  }
+  if (receipt.proofSystem !== 'REFERENCE_ONLY' && receipt.proofSystem !== 'MIDNIGHT') {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'unsupported receipt proof system');
+  }
+  if (!isHex32(receipt.safeId) || !isHex32(receipt.statementCommitment)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'receipt identifiers must be 32-byte hex values');
+  }
+  if (typeof receipt.membershipVersion !== 'bigint' || receipt.membershipVersion <= 0n) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'membership version must be a positive bigint');
+  }
+  if (typeof receipt.policyVersion !== 'bigint' || receipt.policyVersion <= 0n) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'policy version must be a positive bigint');
+  }
+  if (!STATEMENT_TYPES.has(receipt.statementType)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'unknown receipt statement type');
+  }
+  if (!receipt.publicInputs || typeof receipt.publicInputs !== 'object') {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'receipt public inputs are required');
+  }
+  if (!receipt.disclosures || typeof receipt.disclosures !== 'object') {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'receipt disclosures are required');
+  }
+
+  assertOptionalHex32(receipt.publicInputs.proposalCommitment, 'proposal commitment');
+  assertOptionalHex32(receipt.publicInputs.executionNullifier, 'execution nullifier');
+  assertOptionalHex32(receipt.publicInputs.membershipRoot, 'membership root');
+  assertOptionalHex32(receipt.publicInputs.policyCommitment, 'policy commitment');
+  assertOptionalHex32(receipt.publicInputs.cancelledProposalCommitment, 'cancelled proposal commitment');
+  if (
+    receipt.publicInputs.safeStatus !== undefined &&
+    receipt.publicInputs.safeStatus !== 'ACTIVE' &&
+    receipt.publicInputs.safeStatus !== 'PAUSED'
+  ) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'invalid Safe status');
+  }
+
+  if (receipt.disclosures.amount !== undefined && (typeof receipt.disclosures.amount !== 'bigint' || receipt.disclosures.amount < 0n)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'disclosed amount must be a non-negative bigint');
+  }
+  assertOptionalHex32(receipt.disclosures.recipient, 'disclosed recipient');
+  if (receipt.disclosures.executedAt !== undefined && (typeof receipt.disclosures.executedAt !== 'bigint' || receipt.disclosures.executedAt < 0n)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'execution time must be a non-negative bigint');
+  }
+  if (receipt.disclosures.proposalType !== undefined && !ACTION_TYPES.has(receipt.disclosures.proposalType)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'invalid disclosed proposal type');
+  }
+
+  if (receipt.proofSystem === 'REFERENCE_ONLY' && receipt.proof !== null) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'reference receipts must not carry a purported cryptographic proof');
+  }
+  if (receipt.proofSystem === 'MIDNIGHT' && receipt.proof !== null && (typeof receipt.proof !== 'string' || receipt.proof.length === 0)) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'Midnight proof must be a non-empty string when present');
+  }
+
+  if (receipt.statementType === 'QUORUM_AUTHORIZED' && !receipt.publicInputs.proposalCommitment) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'quorum receipt requires proposal commitment');
+  }
+  if (
+    receipt.statementType === 'EXECUTED_EXACTLY_ONCE' &&
+    (!receipt.publicInputs.proposalCommitment || !receipt.publicInputs.executionNullifier)
+  ) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'execution receipt requires proposal commitment and execution nullifier');
+  }
+  if (receipt.statementType === 'PROPOSAL_CANCELLED' && !receipt.publicInputs.cancelledProposalCommitment) {
+    throw new ReceiptError('MALFORMED_RECEIPT', 'cancellation receipt requires cancelled proposal commitment');
   }
 }
 
@@ -123,9 +220,7 @@ export async function buildGovernanceReferenceReceipt(
 }
 
 export async function assertReceiptIntegrity(receipt: BlackoutReceiptEnvelope): Promise<void> {
-  if (receipt.protocol !== 'blackout-safe' || receipt.version !== 1) {
-    throw new ReceiptError('UNSUPPORTED_RECEIPT', 'unsupported Blackout Safe receipt format');
-  }
+  assertReceiptShape(receipt);
   const recomputed = await computeReceiptStatementCommitment(receipt);
   if (recomputed !== receipt.statementCommitment) {
     throw new ReceiptError('RECEIPT_INTEGRITY_MISMATCH', 'receipt statement commitment does not match its public data');
