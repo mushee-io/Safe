@@ -1,0 +1,46 @@
+name: Web Fastcheck
+
+on:
+  push:
+    branches: ['frontend-fastcheck']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BLACKOUT_TOOLCHAIN_COMMIT: 5cfbfd0929e7a7bd2674b21b7769b4a35106e25c
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Safe
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Checkout audited Compact devtools
+        uses: actions/checkout@v4
+        with:
+          repository: mushee-io/Balckout-Pay
+          ref: ${{ env.BLACKOUT_TOOLCHAIN_COMMIT }}
+          path: .blackout-toolchain
+      - name: Verify and pin Compact
+        run: |
+          test "$(git -C .blackout-toolchain rev-parse HEAD)" = "$BLACKOUT_TOOLCHAIN_COMMIT"
+          chmod +x .blackout-toolchain/bin/compact
+          .blackout-toolchain/bin/compact update 0.31.1
+          test "$(.blackout-toolchain/bin/compact compile --version)" = "0.31.1"
+      - name: Generate browser contract binding
+        run: .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.compact contract/build-safe
+      - name: Strict browser TypeScript
+        run: npm run typecheck:web
+      - name: Vite browser bundle
+        run: npm run build:web:bundle
+      - name: Verify app entry
+        run: test -f dist/index.html
