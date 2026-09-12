@@ -48,6 +48,15 @@ function serialized(value: unknown): string {
   return JSON.stringify(value, (_, v) => typeof v === 'bigint' ? v.toString() : v);
 }
 
+function assertNoPrivateProposalFields(value: object): void {
+  for (const field of [
+    'kind', 'actionType', 'asset', 'recipient', 'amount', 'calldataOrAction',
+    'memoHash', 'createdAt', 'expiresAt', 'nonce', 'salt',
+  ]) {
+    assert(!Object.prototype.hasOwnProperty.call(value, field), `public proposal state leaked ${field}`);
+  }
+}
+
 await test('M15 public governance proposal state does not reveal proposal category', async () => {
   const f = await setup();
   const operation = { action: 'PAUSE' } as const;
@@ -71,11 +80,11 @@ await test('M15 public governance proposal state does not reveal proposal catego
   const stateJson = serialized(publicState);
   assert(!receiptJson.includes('GOVERNANCE') && !receiptJson.includes('TREASURY'), 'public receipt must not reveal proposal category');
   assert(!stateJson.includes('GOVERNANCE') && !stateJson.includes('TREASURY'), 'public proposal state must not reveal proposal category');
-  assert(!Object.prototype.hasOwnProperty.call(receipt, 'kind'), 'public receipt must not expose kind field');
-  assert(!Object.prototype.hasOwnProperty.call(publicState, 'kind'), 'public state must not expose kind field');
+  assertNoPrivateProposalFields(receipt);
+  assertNoPrivateProposalFields(publicState);
 });
 
-await test('M15 treasury proposal state also exposes only commitment-bound public metadata', async () => {
+await test('M15 treasury proposal state exposes only commitment-bound public metadata', async () => {
   const f = await setup();
   const payload: PrivateProposalPayload = {
     safeId: f.safeId,
@@ -93,9 +102,10 @@ await test('M15 treasury proposal state also exposes only commitment-bound publi
   const receipt = await f.engine.propose(payload, f.member);
   const publicState = f.engine.proposals.get(receipt.proposalCommitment);
   assert(publicState !== undefined, 'proposal must exist');
-  assert(!serialized(publicState).includes(payload.recipient), 'public state must not reveal recipient');
-  assert(!serialized(publicState).includes('25'), 'public state must not reveal transfer amount');
-  assert(!Object.prototype.hasOwnProperty.call(publicState, 'kind'), 'public state must not expose proposal category');
+  assertNoPrivateProposalFields(publicState);
+  assert(publicState.policyCommitment === f.engine.publicState.policyCommitment, 'proposal should snapshot only the public policy commitment');
+  assert(!Object.values(publicState).includes(payload.recipient), 'public state must not reveal recipient');
+  assert(!Object.values(publicState).includes(payload.amount), 'public state must not reveal transfer amount');
 });
 
 console.log(`\nBLACKOUT SAFE PROPOSAL PRIVACY TESTS: ${pass} PASS / ${fail} FAIL`);

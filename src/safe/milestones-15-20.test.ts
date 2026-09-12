@@ -131,14 +131,20 @@ await test('M17 DUST parser accepts connector shapes and rejects fabricated/unre
 await test('M17 Preview session rejects missing shielded keys before any submission', async () => {
   const session = {
     wallet: {
+      getConnectionStatus() {},
+      getConfiguration() {},
+      getShieldedAddresses() {},
+      getDustBalance() {},
       getProvingProvider() {},
       balanceUnsealedTransaction() {},
       submitTransaction() {},
     },
-    configuration: { indexerUri: 'https://indexer', indexerWsUri: 'wss://indexer' },
+    configuration: { indexerUri: 'https://indexer.example', indexerWsUri: 'wss://indexer.example', networkId: 'preview' },
     addresses: {},
     networkId: 'preview',
-    walletName: 'test',
+    walletName: 'Lace',
+    connectorId: 'lace-test',
+    connectorRdns: 'io.lace.wallet',
   } as SafeLaceSession;
   let failed = false;
   try { assertPreviewSession(session); } catch (error) {
@@ -197,7 +203,7 @@ await test('M20 fake deployment identifiers cannot advance the release gate', as
   assert(!gate.deployedOnPreview, 'fake identifiers must not mark Preview deployed');
 });
 
-await test('M20 even complete Preview evidence still requires manual production security review', async () => {
+await test('M20 syntactically valid identifiers still require finalized on-chain Preview verification', async () => {
   const id = 'ab'.repeat(32);
   const gate = evaluateBlackoutSafeRelease({
     fullZkArtifactsGenerated: true,
@@ -208,6 +214,28 @@ await test('M20 even complete Preview evidence still requires manual production 
     lacePreviewProviderIntegrated: true,
     previewDeploymentTxId: id,
     previewContractAddress: id,
+    multiUserPreviewValidated: true,
+    liveShieldedExecutionValidated: true,
+    liveReceiptVerificationValidated: true,
+  });
+  assert(gate.stage === 'PREVIEW_READY', 'hex-shaped identifiers alone must remain Preview-ready only');
+  assert(gate.blockers.includes('PREVIEW_DEPLOYMENT_NOT_NETWORK_VERIFIED'), 'network verification blocker must be explicit');
+});
+
+await test('M20 even complete verified Preview evidence still requires manual production security review', async () => {
+  const id = 'ab'.repeat(32);
+  const gate = evaluateBlackoutSafeRelease({
+    fullZkArtifactsGenerated: true,
+    compilerPinned0311: true,
+    strictTypecheckPassed: true,
+    protocolTestsPassed: true,
+    generatedBindingIntegrated: true,
+    lacePreviewProviderIntegrated: true,
+    previewDeploymentTxId: id,
+    previewContractAddress: id,
+    previewDeploymentNetworkId: 'preview',
+    previewDeploymentFinalized: true,
+    previewDeploymentVerifiedOnChain: true,
     multiUserPreviewValidated: true,
     liveShieldedExecutionValidated: true,
     liveReceiptVerificationValidated: true,

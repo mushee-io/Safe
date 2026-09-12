@@ -5,17 +5,33 @@ import type { BlackoutSafePrivateState } from './compiled-safe-contract.ts';
 /** Dedicated namespace. Never reuse the income-verifier private-state ID. */
 export const BLACKOUT_SAFE_PRIVATE_STATE_ID = 'blackout-safe-session-v1';
 
-export function createBlackoutSafePrivateStateProvider(): PrivateStateProvider<string, BlackoutSafePrivateState> {
+type SafePrivateStateProvider = PrivateStateProvider<string, BlackoutSafePrivateState>;
+
+interface ScopedProviderRecord {
+  provider: SafePrivateStateProvider;
+  dispose(): void;
+}
+
+const scopedProviders = new WeakMap<object, ScopedProviderRecord>();
+
+function buildProviderRecord(): ScopedProviderRecord {
   const states = new Map<string, BlackoutSafePrivateState>();
   const signingKeys = new Map<string, SigningKey>();
   let contractAddress = '';
+  let disposed = false;
+
+  const assertUsable = () => {
+    if (disposed) throw new Error('BLACKOUT_SAFE_PRIVATE_STATE_PROVIDER_DISPOSED');
+  };
   const scopedKey = (id: string) => `${contractAddress}:${id}`;
 
-  return {
+  const provider = {
     setContractAddress(address: ContractAddress) {
+      assertUsable();
       contractAddress = String(address);
     },
-    async get(id) {
+    async get(id: string) {
+      assertUsable();
       const key = scopedKey(id);
       const existing = states.get(key);
       if (existing !== undefined) return existing;
@@ -26,25 +42,32 @@ export function createBlackoutSafePrivateStateProvider(): PrivateStateProvider<s
       }
       return null;
     },
-    async set(id, state) {
+    async set(id: string, state: BlackoutSafePrivateState) {
+      assertUsable();
       states.set(scopedKey(id), state);
     },
-    async remove(id) {
+    async remove(id: string) {
+      assertUsable();
       states.delete(scopedKey(id));
     },
     async clear() {
+      assertUsable();
       states.clear();
     },
-    async setSigningKey(address, signingKey) {
+    async setSigningKey(address: ContractAddress, signingKey: SigningKey) {
+      assertUsable();
       signingKeys.set(String(address), signingKey);
     },
-    async getSigningKey(address) {
+    async getSigningKey(address: ContractAddress) {
+      assertUsable();
       return signingKeys.get(String(address)) ?? null;
     },
-    async removeSigningKey(address) {
+    async removeSigningKey(address: ContractAddress) {
+      assertUsable();
       signingKeys.delete(String(address));
     },
     async clearSigningKeys() {
+      assertUsable();
       signingKeys.clear();
     },
     async exportPrivateStates() {
@@ -59,8 +82,40 @@ export function createBlackoutSafePrivateStateProvider(): PrivateStateProvider<s
     async importSigningKeys() {
       throw new Error('BLACKOUT_SAFE_SIGNING_KEY_IMPORT_DISABLED');
     },
-  } as PrivateStateProvider<string, BlackoutSafePrivateState>;
+  } as SafePrivateStateProvider;
+
+  return {
+    provider,
+    dispose() {
+      if (disposed) return;
+      states.clear();
+      signingKeys.clear();
+      contractAddress = '';
+      disposed = true;
+    },
+  };
 }
 
-/** Shared provider preserves contract-scoped state across deploy/call lifecycle. */
-export const blackoutSafePrivateStateProvider = createBlackoutSafePrivateStateProvider();
+export function createBlackoutSafePrivateStateProvider(): SafePrivateStateProvider {
+  return buildProviderRecord().provider;
+}
+
+/**
+ * Every connected wallet session receives its own provider instance. This
+ * prevents signing-key/private-state references from crossing accounts when a
+ * browser switches or reconnects wallets in the same page lifetime.
+ */
+export function getBlackoutSafePrivateStateProvider(scope: object): SafePrivateStateProvider {
+  const existing = scopedProviders.get(scope);
+  if (existing) return existing.provider;
+  const created = buildProviderRecord();
+  scopedProviders.set(scope, created);
+  return created.provider;
+}
+
+export function disposeBlackoutSafePrivateStateScope(scope: object): void {
+  const existing = scopedProviders.get(scope);
+  if (!existing) return;
+  existing.dispose();
+  scopedProviders.delete(scope);
+}

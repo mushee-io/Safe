@@ -13,6 +13,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  BLACKOUT_TOOLCHAIN_COMMIT: 5cfbfd0929e7a7bd2674b21b7769b4a35106e25c
+
 jobs:
   protocol:
     runs-on: ubuntu-latest
@@ -29,11 +32,15 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Checkout verified Compact devtools
+      - name: Checkout audited Compact devtools
         uses: actions/checkout@v4
         with:
           repository: mushee-io/Balckout-Pay
+          ref: ${{ env.BLACKOUT_TOOLCHAIN_COMMIT }}
           path: .blackout-toolchain
+
+      - name: Verify audited toolchain source commit
+        run: test "$(git -C .blackout-toolchain rev-parse HEAD)" = "$BLACKOUT_TOOLCHAIN_COMMIT"
 
       - name: Pin Compact toolchain 0.31.1
         run: |
@@ -87,6 +94,19 @@ jobs:
           if (!fs.existsSync(`${staged}/keys`) || !fs.existsSync(`${staged}/zkir`)) throw new Error('browser artifacts not staged');
           console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} exported circuits`);
           NODE
+
+      - name: Strict browser TypeScript
+        run: npm run typecheck:web
+
+      - name: Build Vite frontend
+        run: npm run build:web:bundle
+
+      - name: Verify deployable web output
+        run: |
+          test -f dist/index.html
+          test -f dist/zk-artifacts/blackout-safe/keys/propose_private.prover
+          test -f dist/zk-artifacts/blackout-safe/zkir/propose_private.bzkir
+          echo "BLACKOUT SAFE: deployable frontend + proving assets verified"
 
       - name: Upload generated Safe artifacts
         uses: actions/upload-artifact@v4
