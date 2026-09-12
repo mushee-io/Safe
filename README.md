@@ -60,6 +60,7 @@ BLACKOUT SAFE is a confidential organizational treasury protocol built around pr
 - real `deployContract` path for Safe constructor arguments
 - real `submitCallTx` path covering all 15 Safe circuits
 - exact circuit-argument-count checks before wallet access
+- official Midnight `0x` / `0200` contract-address encodings normalize to canonical raw 64-hex
 - returned tx IDs / contract address validated before being surfaced as evidence
 - wallet/SDK error strings redact credentials and large serialized hex payloads
 - no demo/fake LIVE fallback
@@ -84,8 +85,8 @@ Final hardening branch verification target:
 - proposal privacy: **2 tests**
 - M15–M20 final adversarial/integration gate: **11 tests**
 - ephemeral witness boundary: **2 tests**
-- final security hardening: **12 tests**
-- total: **91 tests**
+- final security hardening: **13 tests**
+- total: **92 tests**
 - strict TypeScript: **required PASS**
 - Compact source compile: **required PASS**
 - full ZKIR/prover/verifier generation for 15 exported circuits: **required PASS**
