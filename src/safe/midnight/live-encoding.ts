@@ -12,8 +12,20 @@ const GOVERNANCE_DOMAIN = padAscii32('blackout:safe:governance:v1');
 
 // The compiler is pinned to Compact 0.31.1. These helpers intentionally use the
 // generated contract's exact hashing internals so the browser never substitutes
-// the SHA-256 reference helpers for LIVE commitments.
-const exactContract = new Contract({} as any) as any;
+// the SHA-256 reference helpers for LIVE commitments. The generated Contract
+// constructor validates that all witness callbacks exist even though these pure
+// hashing helpers never invoke them.
+const hashingWitnessUnavailable = () => {
+  throw new Error('BLACKOUT_SAFE_HASHING_HELPER_WITNESS_UNAVAILABLE');
+};
+const exactContract = new Contract({
+  local_member_secret: hashingWitnessUnavailable,
+  local_member_path: hashingWitnessUnavailable,
+  local_private_proposal: hashingWitnessUnavailable,
+  local_policy: hashingWitnessUnavailable,
+  local_next_policy: hashingWitnessUnavailable,
+  held_coin: hashingWitnessUnavailable,
+} as any) as any;
 
 export interface SerializedSafeSignerKit {
   format: 'BLACKOUT_SAFE_SIGNER_KIT_V1';
