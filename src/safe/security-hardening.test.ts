@@ -4,7 +4,9 @@ import { BlackoutSafeReferenceEngine, SafeProtocolError } from './reference-engi
 import { buildQuorumReferenceReceipt, verifyBlackoutReceipt } from './receipts.ts';
 import {
   assertCircuitArity,
+  assertContractAddress,
   assertSafeEndpointUri,
+  assertTransactionId,
   resolvePinnedAssetBaseUrl,
   sanitizeMidnightErrorMessage,
 } from './midnight/security-hardening.ts';
@@ -242,6 +244,16 @@ await test('H12 reference receipts cannot smuggle a purported proof into LIVE ve
   const smuggled = { ...receipt, proof: 'pretend-proof' } as BlackoutReceiptEnvelope;
   const result = await verifyBlackoutReceipt(smuggled, { async verifyReceipt() { return true; } }, 'LIVE');
   assert(!result.valid && result.code === 'RECEIPT_INTEGRITY_MISMATCH', 'reference receipt with fake proof must fail closed');
+});
+
+await test('H13 official Midnight contract-address prefixes normalize to canonical raw 64-hex', () => {
+  const raw = 'ab'.repeat(32);
+  assert(assertContractAddress(raw, 'ADDRESS') === raw, 'raw address should remain unchanged');
+  assert(assertContractAddress(`0x${raw}`, 'ADDRESS') === raw, '0x address should normalize');
+  assert(assertContractAddress(`0200${raw}`, 'ADDRESS') === raw, '0200 contract prefix should normalize');
+  assert(assertContractAddress(`0x0200${raw}`, 'ADDRESS') === raw, 'combined prefixes should normalize');
+  assert(assertTransactionId(`0x${raw}`, 'TX') === raw, '0x tx id should normalize');
+  expectMessage('TX_MUST_BE_64_HEX', () => assertTransactionId(`0200${raw}`, 'TX'));
 });
 
 console.log(`\nBLACKOUT SAFE SECURITY HARDENING TESTS: ${pass} PASS / ${fail} FAIL`);
