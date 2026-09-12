@@ -1,15 +1,27 @@
 {
   "name": "blackout-safe",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy",
+    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20",
     "test:m1-5": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
     "test:m6-10": "node --experimental-strip-types src/safe/milestones-6-10.test.ts",
     "test:m10-15": "node --experimental-strip-types src/safe/milestones-10-15.test.ts",
     "test:proposal-privacy": "node --experimental-strip-types src/safe/proposal-privacy.test.ts",
-    "typecheck": "tsc -p tsconfig.safe.json --noEmit"
+    "test:m15-20": "node --experimental-strip-types src/safe/milestones-15-20.test.ts",
+    "typecheck": "tsc -p tsconfig.safe.json --noEmit",
+    "midnight:assets": "node scripts/copy-safe-zk-artifacts.mjs"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "@midnight-ntwrk/dapp-connector-api": "4.0.1",
+    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
+    "@midnight-ntwrk/midnight-js-fetch-zk-config-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
+    "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
+    "@midnight-ntwrk/midnight-js-types": "4.1.1"
   },
   "devDependencies": {
     "typescript": "~5.8.2"

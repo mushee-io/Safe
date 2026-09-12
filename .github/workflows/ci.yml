@@ -16,25 +16,25 @@ permissions:
 jobs:
   protocol:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout Safe
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install
+
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Protocol tests
-        run: npm test
-      - name: TypeScript
-        run: npm run typecheck
-      - name: Checkout Blackout Compact devtools
+
+      - name: Checkout verified Compact devtools
         uses: actions/checkout@v4
         with:
           repository: mushee-io/Balckout-Pay
           path: .blackout-toolchain
+
       - name: Pin Compact toolchain 0.31.1
         run: |
           chmod +x .blackout-toolchain/bin/compact
@@ -42,11 +42,28 @@ jobs:
           test "$(.blackout-toolchain/bin/compact compile --version)" = "0.31.1"
           test "$(.blackout-toolchain/bin/compact compile --ledger-version)" = "ledger-8.0.2"
           test "$(.blackout-toolchain/bin/compact compile --runtime-version)" = "0.16.0"
+
+      - name: Generate Safe bindings for TypeScript tests
+        run: |
+          rm -rf contract/build-safe
+          .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.compact contract/build-safe
+          test -f contract/build-safe/contract/index.js
+
+      - name: Protocol and adversarial tests
+        run: npm test
+
+      - name: Strict TypeScript
+        run: npm run typecheck
+
       - name: Full Compact compile and ZK key generation
         run: |
           rm -rf contract/build-safe
           .blackout-toolchain/bin/compact compile contract/blackout_safe.compact contract/build-safe
           test -f contract/build-safe/compiler/contract-info.json
+
+      - name: Stage browser ZK artifacts
+        run: npm run midnight:assets
+
       - name: Verify compiler metadata, circuits and ZK artifacts
         run: |
           node - <<'NODE'
@@ -66,5 +83,19 @@ jobs:
           for (const dir of ['contract/build-safe/contract','contract/build-safe/zkir','contract/build-safe/keys']) {
             if (!fs.existsSync(dir) || fs.readdirSync(dir).length === 0) throw new Error(`missing generated artifacts in ${dir}`);
           }
-          console.log(`full ZK build verified for ${required.length} exported Safe circuits`);
+          const staged = 'public/zk-artifacts/blackout-safe';
+          if (!fs.existsSync(`${staged}/keys`) || !fs.existsSync(`${staged}/zkir`)) throw new Error('browser artifacts not staged');
+          console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} exported circuits`);
           NODE
+
+      - name: Upload generated Safe artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackout-safe-compact-0.31.1
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            contract/build-safe/contract
+            contract/build-safe/compiler/contract-info.json
+            contract/build-safe/keys
+            contract/build-safe/zkir
