@@ -68,11 +68,14 @@ export interface PublicSafeState {
 /**
  * Public proposal state deliberately excludes the proposal category/action.
  * TREASURY vs GOVERNANCE remains private metadata bound inside the commitment.
+ * policyCommitment snapshots only the already-public policy commitment so
+ * historical receipts can still bind to the proposal's original policy.
  */
 export interface PublicProposalState {
   proposalCommitment: Hex32;
   membershipVersion: bigint;
   policyVersion: bigint;
+  policyCommitment: Hex32;
   approvalCount: number;
   status: ProposalStatus;
 }
