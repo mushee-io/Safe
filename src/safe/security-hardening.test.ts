@@ -1,3 +1,6 @@
+import { buildMembershipTree, deriveMemberCommitment, domainHash } from './crypto.ts';
+import type { PrivateMemberMaterial, PrivateProposalPayload, TreasuryPolicy } from './model.ts';
+import { BlackoutSafeReferenceEngine, SafeProtocolError } from './reference-engine.ts';
 import {
   assertCircuitArity,
   assertSafeEndpointUri,
@@ -39,6 +42,52 @@ function expectMessage(expected: string, fn: () => unknown): void {
     return;
   }
   throw new Error(`expected ${expected}`);
+}
+
+async function expectProtocolCode(expected: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    assert(error instanceof SafeProtocolError, `expected SafeProtocolError, got ${String(error)}`);
+    assert(error.code === expected, `expected ${expected}, got ${error.code}`);
+    return;
+  }
+  throw new Error(`expected ${expected}`);
+}
+
+async function referenceFixture() {
+  const memberSecret = await domainHash('blackout:safe:hardening:member:v1', 'alice');
+  const memberCommitment = await deriveMemberCommitment(memberSecret);
+  const tree = await buildMembershipTree([memberCommitment], 4);
+  const safeId = await domainHash('blackout:safe:hardening:safe:v1', 'safe');
+  const policy: TreasuryPolicy = {
+    mode: 'STANDARD',
+    threshold: 1,
+    membershipVersion: 1n,
+    policyVersion: 1n,
+    maxTransferAmount: 1000n,
+  };
+  const engine = await BlackoutSafeReferenceEngine.create({ safeId, membershipRoot: tree.root, policy });
+  const member: PrivateMemberMaterial = {
+    memberSecret,
+    memberCommitment,
+    membershipProof: tree.proofs[0],
+    membershipVersion: 1n,
+  };
+  const payload: PrivateProposalPayload = {
+    safeId,
+    actionType: 'TRANSFER',
+    asset: await domainHash('blackout:safe:hardening:asset:v1', 'asset'),
+    recipient: await domainHash('blackout:safe:hardening:recipient:v1', 'recipient'),
+    amount: 25n,
+    calldataOrAction: await domainHash('blackout:safe:hardening:action:v1', 'transfer'),
+    memoHash: await domainHash('blackout:safe:hardening:memo:v1', 'memo'),
+    createdAt: 1_800_000_000n,
+    expiresAt: 1_800_003_600n,
+    nonce: await domainHash('blackout:safe:hardening:nonce:v1', 'nonce'),
+    salt: await domainHash('blackout:safe:hardening:salt:v1', 'salt'),
+  };
+  return { engine, member, payload, policy };
 }
 
 await test('H1 ZK artifacts are pinned to the same HTTPS origin and exact Safe path', () => {
@@ -123,6 +172,32 @@ await test('H7 Safe private-state/signing-key providers do not cross wallet-sess
   assert(providerA !== providerB, 'wallet scopes must receive distinct providers');
   await providerA.setSigningKey('contract-a' as never, 'secret-a' as never);
   assert(await providerB.getSigningKey('contract-a' as never) === null, 'signing key crossed wallet scope');
+});
+
+await test('H8 unsupported proposal action types fail before entering reference protocol state', async () => {
+  const f = await referenceFixture();
+  const unsupported = { ...f.payload, actionType: 'INVOICE' as const };
+  await expectProtocolCode('UNSUPPORTED_ACTION_TYPE', () => f.engine.propose(unsupported, f.member));
+  assert(f.engine.proposals.size === 0, 'unsupported proposal must not mutate proposal state');
+});
+
+await test('H9 historical quorum remains provable against the proposal policy snapshot after policy rotation', async () => {
+  const f = await referenceFixture();
+  const proposal = await f.engine.propose(f.payload, f.member);
+  await f.engine.approve(proposal.proposalCommitment, f.member);
+  const snapshot = f.engine.proposals.get(proposal.proposalCommitment);
+  assert(snapshot?.policyCommitment === f.engine.publicState.policyCommitment, 'proposal must snapshot active policy commitment');
+
+  const nextPolicy: TreasuryPolicy = {
+    ...f.policy,
+    policyVersion: 2n,
+    maxTransferAmount: 500n,
+  };
+  await f.engine.rotatePolicyForReferenceTests(nextPolicy);
+  await expectProtocolCode('PROPOSAL_STALE_POLICY', () => f.engine.proveQuorum(proposal.proposalCommitment));
+  const historical = await f.engine.proveHistoricalQuorum(proposal.proposalCommitment, f.policy);
+  assert(historical.valid, 'historical quorum proof should survive later policy rotation');
+  assert(historical.policyVersion === 1n, 'historical receipt must preserve original policy version');
 });
 
 console.log(`\nBLACKOUT SAFE SECURITY HARDENING TESTS: ${pass} PASS / ${fail} FAIL`);
