@@ -54,6 +54,7 @@ Repository: `mushee-io/Safe`
 - all 15 circuit IDs exposed: **PASS**
 - exact circuit argument-count gate: **PASS**
 - invalid contract address rejected before network call: **PASS**
+- official `0x` / `0200` Midnight contract-address encodings normalized to canonical raw 64-hex: **PASS**
 - returned deploy/call tx IDs validated before evidence is surfaced: **PASS**
 - same-origin ZK artifact path pinned to `/zk-artifacts/blackout-safe`: **PASS**
 - caller-controlled LIVE ZK artifact host: **REMOVED**
@@ -105,13 +106,13 @@ Final hardening verification target on this branch:
 - proposal privacy: **2 tests**
 - M15–20 final tests: **11 tests**
 - ephemeral witness tests: **2 tests**
-- final security hardening: **12 tests**
-- **TOTAL: 91 tests**
+- final security hardening: **13 tests**
+- **TOTAL: 92 tests**
 - strict TypeScript: **required PASS**
 - generated Safe binding TypeScript integration: **required PASS**
 - full Compact ZK artifact generation: **required PASS**
 
-The exact branch head is not eligible for `main` until CI verifies all 91 tests, strict TypeScript, the 15-circuit full ZK build, browser artifact staging and generated artifact upload.
+The exact branch head is not eligible for `main` until CI verifies all 92 tests, strict TypeScript, the 15-circuit full ZK build, browser artifact staging and generated artifact upload.
 
 ## Current release stage
 
