@@ -53,7 +53,6 @@ export interface ExecuteReferenceInput {
   payload: PrivateProposalPayload;
   nowSeconds: bigint;
   treasury: ShieldedTreasuryAdapter;
-  /** Optional explicit opening used to prove a private policy commitment. */
   policyOpening?: TreasuryPolicy;
 }
 
@@ -62,14 +61,12 @@ export interface ExecuteGovernanceReferenceInput {
   payload: PrivateProposalPayload;
   operation: GovernanceOperation;
   nowSeconds: bigint;
-  /** Optional explicit opening used to prove a private policy commitment. */
   policyOpening?: TreasuryPolicy;
 }
 
 export class BlackoutSafeReferenceEngine {
   #state: PublicSafeState;
   #proposals = new Map<Hex32, PublicProposalState>();
-  /** Private/off-ledger metadata. Public proposal state never exposes proposal category. */
   #proposalKinds = new Map<Hex32, PrivateProposalKind>();
   #approvalNullifiers = new Set<Hex32>();
   #executionNullifiers = new Set<Hex32>();
@@ -210,11 +207,11 @@ export class BlackoutSafeReferenceEngine {
   async approve(proposalCommitment: Hex32, member: PrivateMemberMaterial): Promise<PublicApprovalReceipt> {
     const proposal = this.#proposals.get(proposalCommitment);
     if (!proposal) throw new SafeProtocolError('UNKNOWN_PROPOSAL', 'proposal does not exist');
+    if (proposal.status !== 'PENDING') throw new SafeProtocolError('PROPOSAL_NOT_PENDING', 'proposal cannot accept approvals');
     const kind = this.proposalKind(proposalCommitment);
     if (this.#state.status !== 'ACTIVE' && kind !== 'GOVERNANCE') {
       throw new SafeProtocolError('SAFE_PAUSED', 'safe is paused for treasury actions');
     }
-    if (proposal.status !== 'PENDING') throw new SafeProtocolError('PROPOSAL_NOT_PENDING', 'proposal cannot accept approvals');
     this.requireProposalCurrent(proposal);
 
     await this.requireCurrentMember(member);
@@ -441,7 +438,6 @@ export class BlackoutSafeReferenceEngine {
     };
   }
 
-  /** Legacy test helper only; production state transitions use executeGovernance. */
   async rotateMembershipForReferenceTests(newRoot: Hex32): Promise<void> {
     if (this.#state.membershipVersion >= MAX_UINT64) {
       throw new SafeProtocolError('MEMBERSHIP_VERSION_OVERFLOW', 'membership version cannot exceed Uint64');
@@ -452,7 +448,6 @@ export class BlackoutSafeReferenceEngine {
     this.#state.policyCommitment = await computePolicyCommitment(this.#activePolicy);
   }
 
-  /** Legacy test helper only; production state transitions use executeGovernance. */
   async rotatePolicyForReferenceTests(policy: TreasuryPolicy): Promise<void> {
     this.#activePolicy = { ...policy };
     this.#state.policyCommitment = await computePolicyCommitment(policy);
