@@ -16,7 +16,7 @@ permissions:
 jobs:
   protocol:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
       - name: Checkout Safe
         uses: actions/checkout@v4
@@ -42,14 +42,15 @@ jobs:
           test "$(.blackout-toolchain/bin/compact compile --version)" = "0.31.1"
           test "$(.blackout-toolchain/bin/compact compile --ledger-version)" = "ledger-8.0.2"
           test "$(.blackout-toolchain/bin/compact compile --runtime-version)" = "0.16.0"
-      - name: Compile Safe Compact source
+      - name: Full Compact compile and ZK key generation
         run: |
           rm -rf contract/build-safe
-          .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.compact contract/build-safe
+          .blackout-toolchain/bin/compact compile contract/blackout_safe.compact contract/build-safe
           test -f contract/build-safe/compiler/contract-info.json
-      - name: Verify compiler metadata and circuits
+      - name: Verify compiler metadata, circuits and ZK artifacts
         run: |
           node - <<'NODE'
+          const fs = require('fs');
           const f = require('./contract/build-safe/compiler/contract-info.json');
           if (f['compiler-version'] !== '0.31.1') throw new Error(`wrong compiler ${f['compiler-version']}`);
           if (f['language-version'] !== '0.23.0') throw new Error(`wrong language ${f['language-version']}`);
@@ -62,5 +63,8 @@ jobs:
           ];
           const actual = new Set(f.circuits.map((c) => c.name));
           for (const name of required) if (!actual.has(name)) throw new Error(`missing circuit ${name}`);
-          console.log(`verified ${required.length} exported Safe circuits`);
+          for (const dir of ['contract/build-safe/contract','contract/build-safe/zkir','contract/build-safe/keys']) {
+            if (!fs.existsSync(dir) || fs.readdirSync(dir).length === 0) throw new Error(`missing generated artifacts in ${dir}`);
+          }
+          console.log(`full ZK build verified for ${required.length} exported Safe circuits`);
           NODE
