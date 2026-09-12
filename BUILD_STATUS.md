@@ -1,97 +1,102 @@
 # BLACKOUT SAFE — BUILD STATUS
 
-Repository destination: `mushee-io/Safe`.
+Repository: `mushee-io/Safe`
 
-## Milestones 1–5
-- Product/public-private state model: PASS (reference)
-- Private membership: PASS (reference tests)
-- Anonymous approval: PASS (reference tests)
-- Proposal-scoped nullifiers / duplicate approval: PASS
-- Private proposal commitment/integrity: PASS
+## Milestone 15 — compiler / privacy hardening
 
-## Milestones 6–10
-- Programmable policy baseline: PASS (reference)
-- Amount/lifetime/delay policy checks: PASS
-- Quorum statement: PASS
-- STANDARD / PRIVATE_POLICY modes: PASS
-- Proposal nonce replay protection: PASS
-- Execution replay protection: PASS
-- Insufficient-funds fail closed: PASS
-- Shielded treasury boundary: PASS (reference)
-- LIVE tx-id capability preflight: PASS (reference)
-- Ambiguous LIVE result locks proposal `EXECUTION_UNCERTAIN`: PASS (reference)
-- Compact `receiveShielded` / `sendShielded`: IMPLEMENTED SOURCE, NOT COMPILE-VERIFIED
+- Compact `0.31.1`: **PASS**
+- language `0.23.0`: **PASS**
+- ledger `8.0.2`: **PASS**
+- runtime `0.16.0`: **PASS**
+- 15 exported Safe circuits recognized: **PASS**
+- full ZKIR/prover/verifier generation: **PASS**
+- proposal category absent from public proposal state: **PASS**
+- PRIVATE_POLICY threshold remains hidden: **PASS**
 
-## Milestone 11 — Blackout Receipt
-- Versioned receipt envelope: PASS (reference)
-- Statement commitment integrity: PASS
-- Quorum receipt: PASS
-- Executed-exactly-once receipt: PASS
-- Selective amount disclosure: PASS
-- Selective recipient disclosure: PASS
-- Compact receipt circuits: IMPLEMENTED SOURCE, NOT COMPILE-VERIFIED
+## Milestone 16 — generated binding + private state
 
-## Milestone 12 — Blackout Verify interoperability
-- `blackout-safe` payload/version contract: PASS
-- Reference-only receipt rejected in LIVE: PASS
-- Missing Midnight proof fails closed: PASS
-- Missing verifier fails closed: PASS
-- Verifier adapter boundary: PASS (reference)
-- Real Midnight proof verification in Blackout Verify: NOT YET WIRED
+- generated `Contract` wrapper: **PASS (CI typechecked)**
+- MidnightJS `CompiledContract` integration: **PASS (CI typechecked)**
+- dedicated `blackout-safe-session-v1` namespace: **PASS**
+- raw member/proposal/policy secrets excluded from persistent private state: **PASS by architecture**
+- private-state/signing-key export/import disabled: **PASS**
+- ephemeral witness adapter: **PASS**
+- missing witness values fail closed: **PASS**
+- all 45 browser proving files staged (15 prover + 15 verifier + 15 ZKIR): **PASS in build pipeline**
 
-## Milestone 13 — Membership / policy governance
-- Governance operation commitment: PASS
-- Operation substitution rejection: PASS
-- Membership root rotation: PASS (reference)
-- Old member credential rejection after rotation: PASS
-- Old pending proposal becomes stale: PASS
-- Retained member can use new path: PASS
-- Policy change exact version increment: PASS
-- Compact governed root/policy source: IMPLEMENTED SOURCE, NOT COMPILE-VERIFIED
+## Milestone 17 — Lace Preview provider
 
-## Milestone 14 — Emergency controls
-- Quorum-governed PAUSE: PASS
-- Treasury blocked while paused: PASS
-- Recovery governance remains available while paused: PASS
-- Quorum-governed RESUME: PASS
-- Quorum-governed proposal cancellation: PASS
-- No unilateral admin/master-key transition: PASS (reference API/static source review)
-- Compact pause/resume/cancel source: IMPLEMENTED SOURCE, NOT COMPILE-VERIFIED
+- DApp Connector v4 `connect('preview')`: **IMPLEMENTED**
+- non-Preview session rejection: **PASS (static/test boundary)**
+- indexer HTTP/WebSocket required: **PASS**
+- shielded coin/encryption keys required: **PASS**
+- wallet-delegated proving required: **PASS**
+- transaction balance/submit capabilities required: **PASS**
+- real positive DUST required: **PASS**
+- demo LIVE fallback: **NONE**
+- real browser Lace session: **NOT YET EXERCISED IN THIS REPO**
 
-## Milestone 15 — Structure / hardening
-- Runtime-private reference state: PASS
-- Snapshot-only public state: PASS
-- Snapshot-only proposal state: PASS
-- Treasury capability contract: PASS
-- Governance module: PASS
-- Receipt module: PASS
-- Compact membership model moved to public `MerkleTreeDigest`: IMPLEMENTED SOURCE
-- Compact split into imported library modules: DEFERRED until compiler is available; avoiding unverified import architecture
+## Milestone 18 — Preview deploy/call orchestration
 
-## Verification performed
-- Regression protocol/security tests: **36 PASS / 0 FAIL**
-- M10–M15 hardening tests: **28 PASS / 0 FAIL**
-- Total: **64 PASS / 0 FAIL**
-- TypeScript strict typecheck: **PASS**
-- Compact static feature checks: PASS
-- Compact compile: BLOCKED / NOT RUN
+- real `deployContract` integration: **IMPLEMENTED / TYPECHECK PASS**
+- constructor args wired through MidnightJS `args`: **IMPLEMENTED**
+- real `submitCallTx` integration: **IMPLEMENTED / TYPECHECK PASS**
+- all 15 circuit IDs exposed: **PASS**
+- invalid contract address rejected before network call: **PASS**
+- PRIVATE_POLICY public threshold leakage rejected before wallet call: **PASS**
+- real Preview deployment tx: **NOT ATTEMPTED**
+- real Preview contract address: **NONE YET**
 
-## Not yet truthfully PASS
-- Compact compilation against 0.31.1: BLOCKED in this isolated environment.
-- Generated ZKIR/prover/verifier artifacts for BLACKOUT SAFE: NOT GENERATED.
-- Generated Midnight.js bindings for BLACKOUT SAFE: NOT GENERATED.
-- Real Safe private-state provider: NOT IMPLEMENTED.
-- Real Lace shielded Safe deposit: NOT TESTED.
-- Real Lace approved shielded execution: NOT TESTED.
-- Recipient shielded-output discovery/ciphertext delivery: NOT IMPLEMENTED END-TO-END.
-- Real Midnight Blackout Receipt proof verification: NOT WIRED.
-- Midnight Preview Safe deployment: NOT ATTEMPTED.
-- Frontend BLACKOUT SAFE workspace: NOT YET BUILT.
+## Milestone 19 — multi-user / adversarial final harness
 
-## Compatibility target
-- compactc 0.31.1
-- Compact language 0.23.0
-- compact-runtime 0.16.0
-- Midnight.js 4.1.1
+Reference harness:
 
-Do not claim stale duplicate 0.34.0/0.19.0 artifact metadata as the Safe baseline without a deliberate full toolchain upgrade.
+- five authorized members: **PASS**
+- 3-of-5 threshold: **PASS**
+- two approvals remain below quorum: **PASS**
+- third distinct authorized approval reaches quorum: **PASS**
+- outsider approval: **BLOCKED / PASS**
+- duplicate approval: **BLOCKED / PASS**
+
+Real multi-wallet Preview run: **NOT YET PERFORMED**.
+
+## Milestone 20 — release gate
+
+- fake deployment IDs rejected: **PASS**
+- compiler/tests/integration evidence required before Preview deploy: **PASS**
+- missing Preview evidence remains explicit blocker: **PASS**
+- production cannot be auto-approved: **PASS**
+- manual security/privacy review remains mandatory: **PASS**
+
+## Verification
+
+- M1–10 regression/security: **36 PASS / 0 FAIL**
+- M10–15 hardening: **28 PASS / 0 FAIL**
+- proposal privacy: **2 PASS / 0 FAIL**
+- M15–20 final tests: **10 PASS / 0 FAIL**
+- ephemeral witness tests: **2 PASS / 0 FAIL**
+- **TOTAL: 78 PASS / 0 FAIL**
+- strict TypeScript: **PASS**
+- generated Safe binding TypeScript integration: **PASS**
+- full Compact ZK artifact generation: **PASS**
+
+## Current release stage
+
+**PREVIEW READY — NOT PREVIEW DEPLOYED.**
+
+The code can now be connected to a funded Lace Preview wallet for the first real Safe deployment. Do not mark deployment, shielded transfer, multi-wallet network quorum or live receipt verification as PASS until real transaction IDs/proofs exist.
+
+## Remaining blockers before a complete Preview demo
+
+- connected funded Lace Preview wallet.
+- real Safe deploy transaction and contract address.
+- real shielded deposit into the Safe.
+- at least three independent Preview wallet approvals for one proposal.
+- real shielded execution to the committed recipient.
+- recipient shielded-output discovery/ciphertext delivery.
+- proof-backed Blackout Receipt verification through Blackout Verify.
+- BLACKOUT SAFE frontend workspace integration.
+
+## Production blocker
+
+Even after the Preview demo is green, production/mainnet remains blocked on a deliberate manual security/privacy review. No mainnet deployment is authorized.

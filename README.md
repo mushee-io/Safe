@@ -4,89 +4,96 @@
 
 > Prove the treasury action is authorized. Reveal nothing else that does not need to be revealed.
 
-BLACKOUT SAFE is not a dark-mode clone of Safe/Gnosis. It is a confidential treasury protocol whose authorization, policy, recovery and execution rules are designed around Midnight zero-knowledge and shielded-token primitives.
+BLACKOUT SAFE is a confidential organizational treasury protocol built around private membership, anonymous quorum, committed policy, shielded execution, selective audit receipts and governed recovery.
 
-## Implemented protocol slice — Milestones 1–15
+## Implemented — Milestones 1–20 protocol/integration slice
 
-### Private authorization
+### Confidential authorization
 - private member commitments + Merkle membership proofs
 - proposal-scoped anonymous approval nullifiers
 - duplicate-approval rejection
-- current membership/policy epoch binding
+- membership/policy epoch binding
 - private proposal commitments
+- proposal category kept out of public proposal state
 
 ### Treasury policy + execution
-- threshold policy
-- transfer ceiling
-- proposal lifetime
-- mandatory execution delay
-- `STANDARD` and committed `PRIVATE_POLICY` modes
+- STANDARD and committed PRIVATE_POLICY modes
+- threshold, transfer ceiling, proposal lifetime and execution delay
 - proposal nonce replay protection
-- execution nullifiers
-- double-execution protection
+- execution nullifiers / exactly-once protection
+- Compact `receiveShielded` / `sendShielded` treasury circuits
 - fail-closed shielded treasury adapter boundary
-- Compact shielded custody source using `receiveShielded` / `sendShielded`
-- LIVE adapter tx-id capability checks
-- `EXECUTION_UNCERTAIN` lockout for ambiguous external LIVE outcomes
+- ambiguous LIVE results lock the reference proposal as `EXECUTION_UNCERTAIN`
 
 ### Blackout Receipt / Verify
 - versioned `blackout-safe` receipt envelope
-- quorum receipt
+- quorum authorization receipt
 - executed-exactly-once receipt
-- selective amount disclosure
-- selective recipient disclosure
-- receipt statement commitments
-- reference-only receipts cannot pass LIVE verification
-- missing/unavailable Midnight proof verification fails closed
-- Blackout Verify transport payload
+- selective amount / recipient disclosure circuits
+- reference receipts are rejected by LIVE verification
+- missing/unavailable real Midnight proof verification fails closed
 
 ### Governance / recovery
-- quorum-governed membership root rotation
+- quorum-governed membership rotation
 - quorum-governed policy change
-- pause
-- resume
-- proposal cancellation
+- quorum-governed pause / resume
+- quorum-governed proposal cancellation
 - paused Safe still permits recovery governance
-- membership rotation invalidates old-epoch proposals/credentials
-- policy change invalidates old-policy proposals
 - no Blackout master/admin withdrawal key
 
-### Hardening
-- protocol state uses runtime-private `#` fields in the TypeScript reference engine
-- external Safe/proposal state is snapshot-only
-- governance operations are committed into the private proposal payload
-- operation substitution fails
-- LIVE/reference treasury capabilities are explicitly separated
-- Compact membership model changed to a public Merkle root digest for atomic governed rotation
+### Real Midnight integration boundary
+- generated Compact `Contract` binding wrapped with MidnightJS
+- dedicated `blackout-safe-session-v1` private-state namespace
+- secrets remain ephemeral witness inputs; private-state/signing-key export is disabled
+- ephemeral witness-bundle adapter for member secret/path, proposal, policy, next policy and held coin
+- Lace DApp Connector v4 Preview-only connection path
+- Preview indexer, shielded keys, wallet proving, balancing, submission and positive DUST are mandatory
+- real `deployContract` path for Safe constructor arguments
+- real `submitCallTx` path covering all 15 Safe circuits
+- no demo/fake LIVE fallback
+- browser ZK artifact staging for every prover/verifier/ZKIR file
 
 ## Verification status
 
-TypeScript/reference protocol:
+- reference/security regression: **36 PASS / 0 FAIL**
+- M10–M15 hardening: **28 PASS / 0 FAIL**
+- proposal privacy: **2 PASS / 0 FAIL**
+- M15–M20 final adversarial/integration gate: **10 PASS / 0 FAIL**
+- ephemeral witness boundary: **2 PASS / 0 FAIL**
+- total: **78 PASS / 0 FAIL**
+- strict TypeScript: **PASS**
+- Compact source compile: **PASS**
+- full ZKIR/prover/verifier generation for 15 exported circuits: **PASS**
+- generated binding integration: **PASS in CI**
 
-- regression/security tests: **36 PASS / 0 FAIL**
-- M10–M15 hardening tests: **28 PASS / 0 FAIL**
-- total: **64 PASS / 0 FAIL**
-- strict TypeScript typecheck: **PASS**
+Compatibility verified against:
 
-Compact source: **IMPLEMENTED THROUGH M15, NOT YET COMPILE-VERIFIED** in this isolated runtime. Generated Safe ZK assets, real Midnight proof receipts, Lace/Preview contract deployment and recipient ciphertext delivery are not claimed complete.
+- Compact compiler `0.31.1`
+- Compact language `0.23.0`
+- ledger `8.0.2`
+- Compact runtime `0.16.0`
+- Midnight.js `4.1.1`
 
-See [`BUILD_STATUS.md`](./BUILD_STATUS.md), [`docs/blackout-safe-milestones-10-15.md`](./docs/blackout-safe-milestones-10-15.md), and [`docs/blackout-safe-hardening-review.md`](./docs/blackout-safe-hardening-review.md).
+## Not claimed yet
 
-## Local tests
+The build is **Preview-deployment ready**, not Preview-deployed. A real connected funded Lace Preview wallet is still required for:
 
-Requires Node.js 22+ and TypeScript 5.8+.
+- real Safe deployment transaction + contract address
+- real shielded deposit
+- 3+ independent wallet approval sequence
+- real shielded recipient execution
+- recipient output discovery/ciphertext delivery
+- real Midnight proof-backed Blackout Receipt verification in Blackout Verify
 
-```bash
-npm install
-npm test
-npm run typecheck
-```
+No mainnet deployment is authorized by this repository.
 
 ## Layout
 
 ```text
 contract/
   blackout_safe.compact
+scripts/
+  copy-safe-zk-artifacts.mjs
 src/safe/
   crypto.ts
   governance.ts
@@ -96,21 +103,19 @@ src/safe/
   receipts.ts
   reference-engine.ts
   treasury.ts
-  blackout-safe.test.ts
-  milestones-10-15.test.ts
+  release-gate.ts
+  midnight/
+    compiled-safe-contract.ts
+    private-state.ts
+    witnesses.ts
+    wallet-session.ts
+    providers.ts
+    live-safe.ts
+  *.test.ts
 docs/
 BUILD_STATUS.md
 ```
 
-## Compatibility target
-
-The active Blackout stack audited before starting Safe uses:
-
-- Compact compiler `0.31.1`
-- Compact language `0.23.0`
-- Compact runtime `0.16.0`
-- Midnight.js `4.1.1`
-
 ## Security rule
 
-No LIVE success fallback. No fake approval. No fake deployment. No pretend balance. No hard-coded PASS. Missing wallet/proof/private-state/treasury dependencies must fail closed.
+No LIVE success fallback. No fake approval. No fake deployment. No pretend balance. No hard-coded PASS. Missing wallet/proof/private-state/treasury dependencies fail closed. Production remains manually security-gated even after Preview evidence is complete.
