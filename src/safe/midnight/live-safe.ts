@@ -8,7 +8,8 @@ import { BLACKOUT_SAFE_PRIVATE_STATE_ID } from './private-state.ts';
 import { buildBlackoutSafeProviders, safeMidnightError } from './providers.ts';
 import {
   assertCircuitArity,
-  assertNetworkIdentifier,
+  assertContractAddress,
+  assertTransactionId,
   resolvePinnedAssetBaseUrl,
 } from './security-hardening.ts';
 import { getActiveSafeLaceSession, type SafeLaceSession } from './wallet-session.ts';
@@ -140,11 +141,11 @@ export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
     } as any);
 
     return {
-      contractAddress: assertNetworkIdentifier(
+      contractAddress: assertContractAddress(
         String(deployed.deployTxData.public.contractAddress),
         'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS',
       ),
-      txId: assertNetworkIdentifier(
+      txId: assertTransactionId(
         String(deployed.deployTxData.public.txId),
         'BLACKOUT_SAFE_INVALID_DEPLOYMENT_TX_ID',
       ),
@@ -157,7 +158,7 @@ export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
 }
 
 export async function submitBlackoutSafeCall(input: SubmitBlackoutSafeCallInput) {
-  const contractAddress = assertNetworkIdentifier(input.contractAddress, 'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS');
+  const contractAddress = assertContractAddress(input.contractAddress, 'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS');
   assertCircuitArity(input.circuitId, input.args, CIRCUIT_ARITY);
   const session = requireSession(input.session);
   try {
@@ -173,7 +174,7 @@ export async function submitBlackoutSafeCall(input: SubmitBlackoutSafeCallInput)
     } as any);
 
     return {
-      txId: assertNetworkIdentifier(String(result.public.txId), 'BLACKOUT_SAFE_INVALID_CALL_TX_ID'),
+      txId: assertTransactionId(String(result.public.txId), 'BLACKOUT_SAFE_INVALID_CALL_TX_ID'),
       blockHeight: safeBlockHeight(result.public.blockHeight),
       circuitId: input.circuitId,
       networkId: 'preview' as const,
