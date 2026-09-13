@@ -7,14 +7,11 @@ const ZERO_32 = new Uint8Array(32);
 const MEMBER_TREE_DEPTH = 10;
 const MEMBER_TREE_CAPACITY = 2 ** MEMBER_TREE_DEPTH;
 const LEAF_DOMAIN = new Uint8Array([109, 100, 110, 58, 108, 104]); // mdn:lh
-const PROPOSAL_DOMAIN = padAscii32('blackout:safe:proposal:v1');
-const GOVERNANCE_DOMAIN = padAscii32('blackout:safe:governance:v1');
 
-// The compiler is pinned to Compact 0.31.1. These helpers intentionally use the
-// generated contract's exact hashing internals so the browser never substitutes
-// the SHA-256 reference helpers for LIVE commitments. The generated Contract
-// constructor validates that all witness callbacks exist even though these pure
-// hashing helpers never invoke them.
+// The compiler is pinned to Compact 0.31.1. LIVE commitments use generated
+// Compact helpers so browser hashes remain byte-for-byte identical to the
+// contract. Security-critical proposal/governance hashes call stable named
+// helper circuits rather than compiler-numbered _persistentHash_N internals.
 const hashingWitnessUnavailable = () => {
   throw new Error('BLACKOUT_SAFE_HASHING_HELPER_WITNESS_UNAVAILABLE');
 };
@@ -138,24 +135,12 @@ export function exactPolicyCommitment(policy: PrivatePolicyWitness): Uint8Array 
 
 export function exactProposalCommitment(safeId: Uint8Array, payload: PrivateProposalPayload): Uint8Array {
   if (safeId.length !== 32) throw new Error('BLACKOUT_SAFE_SAFE_ID_MUST_BE_32_BYTES');
-  return exactContract._persistentHash_7([
-    PROPOSAL_DOMAIN,
-    safeId,
-    payload.action_type,
-    payload.asset,
-    payload.recipient,
-    payload.amount,
-    payload.calldata_or_action,
-    payload.memo_hash,
-    payload.created_at,
-    payload.expires_at,
-    payload.nonce,
-    payload.salt,
-  ]);
+  return exactContract._client_proposal_commitment_0(safeId, payload);
 }
 
 export function exactGovernanceSimpleCommitment(safeId: Uint8Array, action: string): Uint8Array {
-  return exactContract._persistentHash_3([GOVERNANCE_DOMAIN, safeId, padAscii32(action)]);
+  if (safeId.length !== 32) throw new Error('BLACKOUT_SAFE_SAFE_ID_MUST_BE_32_BYTES');
+  return exactContract._client_governance_simple_commitment_0(safeId, padAscii32(action));
 }
 
 export function exactGovernanceBytesCommitment(
@@ -163,8 +148,9 @@ export function exactGovernanceBytesCommitment(
   action: string,
   value: Uint8Array,
 ): Uint8Array {
+  if (safeId.length !== 32) throw new Error('BLACKOUT_SAFE_SAFE_ID_MUST_BE_32_BYTES');
   if (value.length !== 32) throw new Error('BLACKOUT_SAFE_GOVERNANCE_VALUE_MUST_BE_32_BYTES');
-  return exactContract._persistentHash_6([GOVERNANCE_DOMAIN, safeId, padAscii32(action), value]);
+  return exactContract._client_governance_bytes_commitment_0(safeId, padAscii32(action), value);
 }
 
 export function exactGovernanceRootCommitment(
@@ -172,7 +158,8 @@ export function exactGovernanceRootCommitment(
   action: string,
   root: { field: bigint },
 ): Uint8Array {
-  return exactContract._persistentHash_4([GOVERNANCE_DOMAIN, safeId, padAscii32(action), root.field]);
+  if (safeId.length !== 32) throw new Error('BLACKOUT_SAFE_SAFE_ID_MUST_BE_32_BYTES');
+  return exactContract._client_governance_root_commitment_0(safeId, padAscii32(action), root);
 }
 
 export function createMembershipSetup(memberCount: number, safeId = randomBytes32()): MembershipSetup {
