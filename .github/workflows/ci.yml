@@ -57,9 +57,11 @@ jobs:
         run: |
           node scripts/prepare-preview-contract.mjs
           node scripts/publicize-receipt-mode.mjs
+          node scripts/add-stable-client-hash-helpers.mjs
           test -f contract/blackout_safe.preview.compact
           grep -q "export circuit receipt_statement" contract/blackout_safe.preview.compact
           grep -q "const mode = disclose(statement)" contract/blackout_safe.preview.compact
+          grep -q "circuit client_proposal_commitment" contract/blackout_safe.preview.compact
           if grep -q "export circuit receipt_quorum_authorized" contract/blackout_safe.preview.compact; then
             echo "BLACKOUT SAFE: legacy receipt export leaked into Preview contract"
             exit 1
