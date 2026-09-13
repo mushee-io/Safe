@@ -16,7 +16,7 @@ function check(name, predicate) {
 
 const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'));
 const vite = readFileSync('vite.config.ts', 'utf8');
-const styles = readFileSync('src/web/styles.css', 'utf8');
+const styles = `${readFileSync('src/web/styles.css', 'utf8')}\n${readFileSync('src/web/product.css', 'utf8')}`;
 const index = readFileSync('index.html', 'utf8');
 const bootstrap = readFileSync('src/web/security-bootstrap.ts', 'utf8');
 const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
@@ -27,6 +27,9 @@ const globalHeaders = new Map((globalRule?.headers ?? []).map((header) => [heade
 const zkRule = vercel.headers.find((rule) => rule.source === '/zk-artifacts/blackout-safe/(.*)');
 const zkHeaders = new Map((zkRule?.headers ?? []).map((header) => [header.key, header.value]));
 const csp = globalHeaders.get('Content-Security-Policy') ?? '';
+const bootstrapEntry = '/src/web/security-bootstrap.ts';
+const treasuryEntries = ['/src/web/app-v2.ts', '/src/web/main.ts'];
+const activeTreasuryEntry = treasuryEntries.find((entry) => index.includes(entry));
 
 check('WEBSEC CSP denies framing, objects and base injection', () =>
   csp.includes("frame-ancestors 'none'") && csp.includes("object-src 'none'") && csp.includes("base-uri 'none'"));
@@ -45,7 +48,7 @@ check('WEBSEC dependency install scripts are disabled on Vercel', () =>
 check('WEBSEC production source maps are disabled', () => vite.includes('sourcemap: false'));
 check('WEBSEC third-party font beacon removed', () => !styles.includes('fonts.googleapis.com') && !styles.includes('fonts.gstatic.com'));
 check('WEBSEC security bootstrap loads before treasury app', () =>
-  index.indexOf('/src/web/security-bootstrap.ts') >= 0 && index.indexOf('/src/web/security-bootstrap.ts') < index.indexOf('/src/web/main.ts'));
+  Boolean(activeTreasuryEntry) && index.indexOf(bootstrapEntry) >= 0 && index.indexOf(bootstrapEntry) < index.indexOf(activeTreasuryEntry));
 check('WEBSEC self-asserted network verification is scrubbed', () =>
   bootstrap.includes('deploymentVerifiedOnChain = false') && bootstrap.includes("#attach-verified") && bootstrap.includes('NETWORK VERIFICATION CANNOT BE SELF-DECLARED'));
 check('WEBSEC private browser inputs disable spellcheck/autocomplete and cap payloads', () =>
