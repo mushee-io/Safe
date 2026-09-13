@@ -7,8 +7,9 @@ const helpers = `// ------------------------------------------------------------
 // STABLE CLIENT-SIDE COMMITMENT HELPERS
 // ---------------------------------------------------------------------------
 // These are intentionally unexported: they generate no deploy verifier keys.
-// The browser calls their compiler-generated named helpers instead of brittle
-// numbered _persistentHash_N internals, which can shift when circuits change.
+// Real exported circuits call them too, preventing dead-code elimination and
+// giving the browser stable compiler-generated names instead of brittle
+// numbered _persistentHash_N internals.
 
 circuit client_proposal_commitment(
   client_safe_id: Bytes<32>,
@@ -69,5 +70,38 @@ if (!source.includes(marker)) throw new Error('BLACKOUT_SAFE_HASH_HELPER_INSERTI
 if (!source.includes('circuit client_proposal_commitment(')) {
   source = source.replace(marker, `${helpers}${marker}`);
 }
+
+source = source.replaceAll(
+  'private_proposal_commitment(recovery_payload)',
+  'client_proposal_commitment(safe_id, recovery_payload)',
+);
+source = source.replaceAll(
+  'private_proposal_commitment(payload)',
+  'client_proposal_commitment(safe_id, payload)',
+);
+source = source.replaceAll(
+  'governance_simple_commitment(pad(32, ',
+  'client_governance_simple_commitment(safe_id, pad(32, ',
+);
+source = source.replaceAll(
+  'governance_bytes_commitment(pad(32, ',
+  'client_governance_bytes_commitment(safe_id, pad(32, ',
+);
+source = source.replaceAll(
+  'governance_root_commitment(pad(32, ',
+  'client_governance_root_commitment(safe_id, pad(32, ',
+);
+
+const requiredNamedHelpers = [
+  'client_proposal_commitment',
+  'client_governance_simple_commitment',
+  'client_governance_bytes_commitment',
+  'client_governance_root_commitment',
+];
+for (const helper of requiredNamedHelpers) {
+  const occurrences = source.split(helper).length - 1;
+  if (occurrences < 2) throw new Error(`BLACKOUT_SAFE_HASH_HELPER_NOT_RETAINED: ${helper}`);
+}
+
 await writeFile(path, source, 'utf8');
-console.log('BLACKOUT SAFE: stable named client commitment helpers inserted.');
+console.log('BLACKOUT SAFE: stable named client commitment helpers inserted and retained.');
