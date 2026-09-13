@@ -6,8 +6,7 @@ const browserWebSocketShim = new URL('./src/web/shims/isomorphic-ws.ts', import.
 export default defineConfig({
   // Midnight's browser runtime loads its on-chain WASM through ESM. Modern
   // browsers support native top-level await, so keep the emitted module native
-  // instead of rewriting it through vite-plugin-top-level-await (which crashes
-  // during Rollup/SWC code generation under this Vite toolchain).
+  // instead of rewriting it through vite-plugin-top-level-await.
   plugins: [wasm()],
   resolve: {
     alias: [
@@ -18,7 +17,10 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'dist',
-    sourcemap: true,
+    // Do not publish source maps from the treasury client. This keeps private
+    // implementation detail out of the production deployment while CI still
+    // typechecks the original sources.
+    sourcemap: false,
     chunkSizeWarningLimit: 1000,
   },
   define: {
