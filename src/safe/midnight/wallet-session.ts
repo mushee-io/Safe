@@ -2,6 +2,8 @@ import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { disposeBlackoutSafePrivateStateScope } from './private-state.ts';
 import { assertSafeEndpointUri } from './security-hardening.ts';
 
+export type SupportedSafeWalletKind = 'lace' | '1am';
+
 export interface SafeLaceConfiguration {
   proverServerUri?: string;
   indexerUri?: string;
@@ -16,6 +18,11 @@ export interface SafeShieldedAddresses {
   shieldedEncryptionPublicKey?: string;
 }
 
+/**
+ * Historical name kept for compatibility with the rest of BLACKOUT SAFE.
+ * The session may now be backed by either Lace or 1AM, both through Midnight
+ * DApp Connector v4 on Preview.
+ */
 export interface SafeLaceSession {
   wallet: any;
   configuration: SafeLaceConfiguration;
@@ -25,7 +32,11 @@ export interface SafeLaceSession {
   connectorId: string;
   connectorRdns?: string;
   connectorApiVersion?: string;
+  walletKind?: SupportedSafeWalletKind;
 }
+
+export type SafeWalletSession = SafeLaceSession;
+export type SafeWalletConfiguration = SafeLaceConfiguration;
 
 export interface DiscoveredSafeWallet {
   id: string;
@@ -41,14 +52,38 @@ export function getActiveSafeLaceSession(): SafeLaceSession | null {
   return activeSession;
 }
 
+export const getActiveSafeWalletSession = getActiveSafeLaceSession;
+
 export function clearActiveSafeLaceSession(): void {
   if (activeSession) disposeBlackoutSafePrivateStateScope(activeSession);
   activeSession = null;
 }
 
-function isLaceDescriptor(wallet: Pick<DiscoveredSafeWallet, 'name' | 'rdns'>): boolean {
-  const descriptor = `${wallet.name} ${wallet.rdns ?? ''}`.toLowerCase();
-  return descriptor.includes('lace');
+export const clearActiveSafeWalletSession = clearActiveSafeLaceSession;
+
+function walletDescriptor(wallet: Pick<DiscoveredSafeWallet, 'id' | 'name' | 'rdns'>): string {
+  return `${wallet.id} ${wallet.name} ${wallet.rdns ?? ''}`.trim().toLowerCase();
+}
+
+export function supportedSafeWalletKind(
+  wallet: Pick<DiscoveredSafeWallet, 'id' | 'name' | 'rdns'>,
+): SupportedSafeWalletKind | null {
+  const descriptor = walletDescriptor(wallet);
+  const lace = descriptor.includes('lace');
+  const oneAm = descriptor.includes('1am');
+  if (lace === oneAm) return null;
+  return lace ? 'lace' : '1am';
+}
+
+function sessionWalletKind(session: SafeLaceSession): SupportedSafeWalletKind | null {
+  const detected = supportedSafeWalletKind({
+    id: session.connectorId,
+    name: session.walletName,
+    rdns: session.connectorRdns,
+  });
+  if (!detected) return null;
+  if (session.walletKind && session.walletKind !== detected) return null;
+  return detected;
 }
 
 export function getInjectedSafeWallets(): DiscoveredSafeWallet[] {
@@ -60,7 +95,7 @@ export function getInjectedSafeWallets(): DiscoveredSafeWallet[] {
   const wallets: DiscoveredSafeWallet[] = [];
   for (const [id, candidate] of Object.entries(candidateWindow.midnight)) {
     if (!candidate || typeof candidate !== 'object' || typeof candidate.connect !== 'function') continue;
-    if (seenApis.has(candidate)) continue; // Lace may expose a UUID entry plus the mnLace alias.
+    if (seenApis.has(candidate)) continue; // Wallets may expose both UUID entries and stable aliases.
     seenApis.add(candidate);
     wallets.push({
       id,
@@ -98,8 +133,8 @@ export function assertPreviewSession(session: SafeLaceSession): void {
   if (session.configuration.networkId && session.configuration.networkId !== 'preview') {
     throw new Error('BLACKOUT_SAFE_CONFIGURATION_NOT_PREVIEW');
   }
-  if (!isLaceDescriptor({ name: session.walletName, rdns: session.connectorRdns })) {
-    throw new Error('BLACKOUT_SAFE_NON_LACE_CONNECTOR_REJECTED');
+  if (!sessionWalletKind(session)) {
+    throw new Error('BLACKOUT_SAFE_UNSUPPORTED_CONNECTOR_REJECTED');
   }
   normalizedConfiguration(session.configuration);
   if (!session.addresses.shieldedCoinPublicKey || !session.addresses.shieldedEncryptionPublicKey) {
@@ -140,7 +175,7 @@ export async function revalidateBlackoutSafeLaceSession(session: SafeLaceSession
   assertPreviewSession(session);
   const status = await session.wallet.getConnectionStatus();
   if (status?.status !== 'connected' || status.networkId !== 'preview') {
-    throw new Error('BLACKOUT_SAFE_LACE_SESSION_CHANGED');
+    throw new Error('BLACKOUT_SAFE_WALLET_SESSION_CHANGED');
   }
 
   const latestConfiguration = normalizedConfiguration(await session.wallet.getConfiguration());
@@ -163,24 +198,48 @@ export async function revalidateBlackoutSafeLaceSession(session: SafeLaceSession
   await requirePreviewDust(session);
 }
 
+export const revalidateBlackoutSafeWalletSession = revalidateBlackoutSafeLaceSession;
+
+function walletNotDetectedError(preferred?: SupportedSafeWalletKind): Error {
+  if (preferred === 'lace') return new Error('BLACKOUT_SAFE_LACE_NOT_DETECTED');
+  if (preferred === '1am') return new Error('BLACKOUT_SAFE_1AM_NOT_DETECTED');
+  return new Error('BLACKOUT_SAFE_SUPPORTED_WALLET_NOT_DETECTED');
+}
+
+function ambiguousWalletError(preferred?: SupportedSafeWalletKind): Error {
+  if (preferred === 'lace') return new Error('BLACKOUT_SAFE_AMBIGUOUS_LACE_CONNECTORS');
+  if (preferred === '1am') return new Error('BLACKOUT_SAFE_AMBIGUOUS_1AM_CONNECTORS');
+  return new Error('BLACKOUT_SAFE_MULTIPLE_SUPPORTED_WALLETS');
+}
+
 /**
- * Connects only to a Lace-labelled DApp Connector v4 Preview wallet. There is
- * no fallback to an arbitrary injected connector and no demo fallback.
+ * Connects only to explicitly supported Midnight DApp Connector v4 wallets:
+ * Lace and 1AM. No arbitrary injected-wallet fallback and no demo fallback.
+ *
+ * With no preference, one supported injected wallet must be present. If both
+ * Lace and 1AM are installed the caller must choose explicitly, preventing a
+ * malicious/accidental connector from silently winning selection.
  */
-export async function connectBlackoutSafeLace(): Promise<SafeLaceSession> {
+export async function connectBlackoutSafeWallet(
+  preferred?: SupportedSafeWalletKind,
+): Promise<SafeLaceSession> {
   if (typeof window === 'undefined') throw new Error('BLACKOUT_SAFE_BROWSER_REQUIRED');
   const wallets = getInjectedSafeWallets();
-  const laceWallets = wallets.filter(isLaceDescriptor);
-  if (laceWallets.length === 0) throw new Error('BLACKOUT_SAFE_LACE_NOT_DETECTED');
-  if (laceWallets.length > 1) throw new Error('BLACKOUT_SAFE_AMBIGUOUS_LACE_CONNECTORS');
-  const selected = laceWallets[0];
+  const supported = wallets
+    .map((wallet) => ({ wallet, kind: supportedSafeWalletKind(wallet) }))
+    .filter((entry): entry is { wallet: DiscoveredSafeWallet; kind: SupportedSafeWalletKind } => Boolean(entry.kind))
+    .filter((entry) => !preferred || entry.kind === preferred);
 
+  if (supported.length === 0) throw walletNotDetectedError(preferred);
+  if (supported.length > 1) throw ambiguousWalletError(preferred);
+
+  const { wallet: selected, kind } = supported[0];
   const connected = await selected.api.connect('preview');
   const rawConfiguration = await connected.getConfiguration();
   const configuration = normalizedConfiguration(rawConfiguration);
   const connectionStatus = await connected.getConnectionStatus();
   if (connectionStatus?.status !== 'connected' || connectionStatus.networkId !== 'preview') {
-    throw new Error('BLACKOUT_SAFE_LACE_NOT_ON_PREVIEW');
+    throw new Error('BLACKOUT_SAFE_WALLET_NOT_ON_PREVIEW');
   }
   if (configuration.networkId && configuration.networkId !== 'preview') {
     throw new Error('BLACKOUT_SAFE_CONFIGURATION_NOT_PREVIEW');
@@ -207,9 +266,22 @@ export async function connectBlackoutSafeLace(): Promise<SafeLaceSession> {
     connectorId: selected.id,
     connectorRdns: selected.rdns,
     connectorApiVersion: selected.apiVersion,
+    walletKind: kind,
   };
   await revalidateBlackoutSafeLaceSession(session);
   if (activeSession && activeSession !== session) disposeBlackoutSafePrivateStateScope(activeSession);
   activeSession = session;
   return session;
+}
+
+/**
+ * Backwards-compatible connection entrypoint used by the current web runtime.
+ * It now accepts a single installed supported wallet (Lace OR 1AM).
+ */
+export async function connectBlackoutSafeLace(): Promise<SafeLaceSession> {
+  return connectBlackoutSafeWallet();
+}
+
+export async function connectBlackoutSafe1AM(): Promise<SafeLaceSession> {
+  return connectBlackoutSafeWallet('1am');
 }
