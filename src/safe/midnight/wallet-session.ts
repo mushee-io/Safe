@@ -206,10 +206,16 @@ export function assertPreviewSession(session: SafeLaceSession): void {
   }
 }
 
+/**
+ * Returns the wallet's current DUST balance. Lace requires a positive balance.
+ * 1AM may use its sponsored Preview execution path, so a valid zero balance is
+ * allowed for 1AM; transaction balancing/submission still remains real and may
+ * fail closed if sponsorship is unavailable for the requested operation.
+ */
 export async function requirePreviewDust(session: SafeLaceSession): Promise<bigint> {
   assertPreviewSession(session);
   const dust = readDustBalance(await session.wallet.getDustBalance());
-  if (dust <= 0n) throw new Error('BLACKOUT_SAFE_ZERO_DUST');
+  if (dust <= 0n && sessionWalletKind(session) !== '1am') throw new Error('BLACKOUT_SAFE_ZERO_DUST');
   return dust;
 }
 
