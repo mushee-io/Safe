@@ -12,11 +12,7 @@ const circuits = [
   'governance_cancel_proposal',
   'governance_rotate_membership',
   'governance_change_policy',
-  'receipt_quorum_authorized',
-  'receipt_executed_exactly_once',
-  'receipt_disclose_amount',
-  'receipt_disclose_recipient',
-  'receipt_proposal_cancelled',
+  'receipt_statement',
 ];
 
 const source = resolve('contract/build-safe');
