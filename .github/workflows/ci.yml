@@ -22,22 +22,25 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Checkout Safe
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Checkout audited Compact devtools
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: mushee-io/Balckout-Pay
           ref: ${{ env.BLACKOUT_TOOLCHAIN_COMMIT }}
           path: .blackout-toolchain
+          persist-credentials: false
 
       - name: Verify audited toolchain source commit
         run: test "$(git -C .blackout-toolchain rev-parse HEAD)" = "$BLACKOUT_TOOLCHAIN_COMMIT"
@@ -106,10 +109,14 @@ jobs:
           test -f dist/index.html
           test -f dist/zk-artifacts/blackout-safe/keys/propose_private.prover
           test -f dist/zk-artifacts/blackout-safe/zkir/propose_private.bzkir
+          if find dist -type f -name '*.map' -print -quit | grep -q .; then
+            echo "BLACKOUT SAFE: production source maps must not be published"
+            exit 1
+          fi
           echo "BLACKOUT SAFE: deployable frontend + proving assets verified"
 
       - name: Upload generated Safe artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: blackout-safe-compact-0.31.1
           retention-days: 7
