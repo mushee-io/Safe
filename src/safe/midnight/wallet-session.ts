@@ -4,6 +4,10 @@ import { assertSafeEndpointUri } from './security-hardening.ts';
 
 export type SupportedSafeWalletKind = 'lace' | '1am';
 
+const WALLET_DETECT_TIMEOUT_MS = 6_000;
+const WALLET_DETECT_INTERVAL_MS = 250;
+const WALLET_REGISTRY_SETTLE_MS = 500;
+
 export interface SafeLaceConfiguration {
   proverServerUri?: string;
   indexerUri?: string;
@@ -106,6 +110,45 @@ export function getInjectedSafeWallets(): DiscoveredSafeWallet[] {
     });
   }
   return wallets;
+}
+
+function supportedInjectedWallets(preferred?: SupportedSafeWalletKind): Array<{
+  wallet: DiscoveredSafeWallet;
+  kind: SupportedSafeWalletKind;
+}> {
+  return getInjectedSafeWallets()
+    .map((wallet) => ({ wallet, kind: supportedSafeWalletKind(wallet) }))
+    .filter((entry): entry is { wallet: DiscoveredSafeWallet; kind: SupportedSafeWalletKind } => Boolean(entry.kind))
+    .filter((entry) => !preferred || entry.kind === preferred);
+}
+
+async function waitForSupportedInjectedWallets(preferred?: SupportedSafeWalletKind): Promise<Array<{
+  wallet: DiscoveredSafeWallet;
+  kind: SupportedSafeWalletKind;
+}>> {
+  const startedAt = Date.now();
+  let firstSeenAt: number | null = null;
+  let previousFingerprint = '';
+
+  while (Date.now() - startedAt < WALLET_DETECT_TIMEOUT_MS) {
+    const matches = supportedInjectedWallets(preferred);
+    const fingerprint = matches
+      .map(({ wallet, kind }) => `${kind}:${wallet.id}:${wallet.name}:${wallet.rdns ?? ''}:${wallet.apiVersion ?? ''}`)
+      .sort()
+      .join('|');
+
+    if (matches.length > 0) {
+      if (fingerprint !== previousFingerprint) {
+        previousFingerprint = fingerprint;
+        firstSeenAt = Date.now();
+      }
+      if (firstSeenAt !== null && Date.now() - firstSeenAt >= WALLET_REGISTRY_SETTLE_MS) return matches;
+    }
+
+    await new Promise<void>((resolve) => window.setTimeout(resolve, WALLET_DETECT_INTERVAL_MS));
+  }
+
+  return supportedInjectedWallets(preferred);
 }
 
 export function readDustBalance(value: unknown): bigint {
@@ -216,19 +259,16 @@ function ambiguousWalletError(preferred?: SupportedSafeWalletKind): Error {
  * Connects only to explicitly supported Midnight DApp Connector v4 wallets:
  * Lace and 1AM. No arbitrary injected-wallet fallback and no demo fallback.
  *
+ * Browser extensions inject asynchronously, so detection waits up to six
+ * seconds and requires the registry to remain stable briefly before selection.
  * With no preference, one supported injected wallet must be present. If both
- * Lace and 1AM are installed the caller must choose explicitly, preventing a
- * malicious/accidental connector from silently winning selection.
+ * Lace and 1AM are installed the caller must choose explicitly.
  */
 export async function connectBlackoutSafeWallet(
   preferred?: SupportedSafeWalletKind,
 ): Promise<SafeLaceSession> {
   if (typeof window === 'undefined') throw new Error('BLACKOUT_SAFE_BROWSER_REQUIRED');
-  const wallets = getInjectedSafeWallets();
-  const supported = wallets
-    .map((wallet) => ({ wallet, kind: supportedSafeWalletKind(wallet) }))
-    .filter((entry): entry is { wallet: DiscoveredSafeWallet; kind: SupportedSafeWalletKind } => Boolean(entry.kind))
-    .filter((entry) => !preferred || entry.kind === preferred);
+  const supported = await waitForSupportedInjectedWallets(preferred);
 
   if (supported.length === 0) throw walletNotDetectedError(preferred);
   if (supported.length > 1) throw ambiguousWalletError(preferred);
