@@ -45,6 +45,7 @@ async function prepareArtifacts() {
   await mkdir(resolve('contract'), { recursive: true });
   run(process.execPath, ['scripts/prepare-preview-contract.mjs']);
   run(process.execPath, ['scripts/publicize-receipt-mode.mjs']);
+  run(process.execPath, ['scripts/add-stable-client-hash-helpers.mjs']);
   run(COMPACT, ['compile', PREVIEW_CONTRACT, 'contract/build-safe']);
   run(process.execPath, ['scripts/copy-safe-zk-artifacts.mjs']);
   run(process.execPath, ['scripts/check-deployment-footprint.mjs']);
