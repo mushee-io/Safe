@@ -17,6 +17,7 @@ import {
 import {
   assertPreviewSession,
   revalidateBlackoutSafeLaceSession,
+  supportedSafeWalletKind,
   type SafeLaceSession,
 } from './midnight/wallet-session.ts';
 
@@ -126,7 +127,7 @@ await test('H4 circuit arity rejects malformed transaction requests before walle
     assertCircuitArity('evil_circuit', [], { approve_private: 1 }));
 });
 
-await test('H5 non-Lace injected session descriptors are rejected even if API methods exist', () => {
+await test('H5 unsupported injected session descriptors are rejected even if API methods exist', () => {
   const session = {
     wallet: {
       getConnectionStatus() {}, getConfiguration() {}, getShieldedAddresses() {}, getDustBalance() {},
@@ -139,7 +140,30 @@ await test('H5 non-Lace injected session descriptors are rejected even if API me
     connectorId: 'unknown',
     connectorRdns: 'wallet.example',
   } as SafeLaceSession;
-  expectMessage('BLACKOUT_SAFE_NON_LACE_CONNECTOR_REJECTED', () => assertPreviewSession(session));
+  expectMessage('BLACKOUT_SAFE_UNSUPPORTED_CONNECTOR_REJECTED', () => assertPreviewSession(session));
+});
+
+await test('H5b wallet allowlist recognizes Lace and 1AM but not arbitrary connectors', () => {
+  assert(supportedSafeWalletKind({ id: 'mnLace', name: 'Lace', rdns: 'io.lace.wallet' }) === 'lace', 'Lace must be recognized');
+  assert(supportedSafeWalletKind({ id: '1am', name: '1AM', rdns: 'xyz.1am.wallet' }) === '1am', '1AM must be recognized');
+  assert(supportedSafeWalletKind({ id: 'unknown', name: 'Unknown Wallet', rdns: 'wallet.example' }) === null, 'unknown wallet must remain rejected');
+});
+
+await test('H5c 1AM DApp Connector v4 session is accepted on Preview', () => {
+  const session = {
+    wallet: {
+      getConnectionStatus() {}, getConfiguration() {}, getShieldedAddresses() {}, getDustBalance() {},
+      getProvingProvider() {}, balanceUnsealedTransaction() {}, submitTransaction() {},
+    },
+    configuration: { indexerUri: 'https://indexer.example', indexerWsUri: 'wss://indexer.example', networkId: 'preview' },
+    addresses: { shieldedCoinPublicKey: 'coin', shieldedEncryptionPublicKey: 'enc' },
+    networkId: 'preview',
+    walletName: '1AM',
+    connectorId: '1am',
+    connectorRdns: 'xyz.1am.wallet',
+    walletKind: '1am',
+  } as SafeLaceSession;
+  assertPreviewSession(session);
 });
 
 await test('H6 a wallet account/network mutation is detected before the next LIVE call', async () => {
