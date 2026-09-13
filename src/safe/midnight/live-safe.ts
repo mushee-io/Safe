@@ -25,11 +25,7 @@ export type BlackoutSafeCircuitId =
   | 'governance_cancel_proposal'
   | 'governance_rotate_membership'
   | 'governance_change_policy'
-  | 'receipt_quorum_authorized'
-  | 'receipt_executed_exactly_once'
-  | 'receipt_disclose_amount'
-  | 'receipt_disclose_recipient'
-  | 'receipt_proposal_cancelled';
+  | 'receipt_statement';
 
 const CIRCUIT_ARITY: Readonly<Record<BlackoutSafeCircuitId, number>> = {
   propose_private: 1,
@@ -42,11 +38,7 @@ const CIRCUIT_ARITY: Readonly<Record<BlackoutSafeCircuitId, number>> = {
   governance_cancel_proposal: 2,
   governance_rotate_membership: 2,
   governance_change_policy: 1,
-  receipt_quorum_authorized: 1,
-  receipt_executed_exactly_once: 1,
-  receipt_disclose_amount: 1,
-  receipt_disclose_recipient: 1,
-  receipt_proposal_cancelled: 1,
+  receipt_statement: 4,
 };
 
 export interface DeployBlackoutSafeInput {
