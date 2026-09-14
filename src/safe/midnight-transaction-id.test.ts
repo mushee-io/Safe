@@ -1,4 +1,7 @@
-import { assertTransactionId } from './midnight/security-hardening.ts';
+import {
+  assertTransactionId,
+  finalizedTransactionReference,
+} from './midnight/security-hardening.ts';
 import { evaluateBlackoutSafeRelease } from './release-gate.ts';
 
 let pass = 0;
@@ -47,6 +50,38 @@ await test('TXID accepts Midnight 33-byte transaction identifier without strippi
 await test('TXID rejects malformed lengths and contract-address prefixes', () => {
   expectMessage('TX_MUST_BE_64_HEX', () => assertTransactionId('ab'.repeat(31), 'TX'));
   expectMessage('TX_MUST_BE_64_HEX', () => assertTransactionId(`0200${'ab'.repeat(32)}`, 'TX'));
+});
+
+await test('finalized reference prefers canonical txHash even when txId uses an unknown encoding', () => {
+  const hash = '12'.repeat(32);
+  const reference = finalizedTransactionReference({
+    txHash: `0x${hash}`,
+    txId: 'wallet-specific-identifier-format',
+  }, 'DEPLOY');
+  assert(reference === hash, 'canonical txHash was not preferred');
+});
+
+await test('finalized reference falls back to valid 33-byte txId when txHash is unavailable', () => {
+  const identifier = `02${'34'.repeat(32)}`;
+  const reference = finalizedTransactionReference({ txId: identifier }, 'DEPLOY');
+  assert(reference === identifier, 'valid txId fallback failed');
+});
+
+await test('finalized reference can recover from identifiers array across SDK shapes', () => {
+  const hash = '56'.repeat(32);
+  const reference = finalizedTransactionReference({
+    txId: 'not-hex',
+    identifiers: ['not-hex-either', `0x${hash}`],
+  }, 'DEPLOY');
+  assert(reference === hash, 'identifiers fallback failed');
+});
+
+await test('finalized reference fails closed when no public transaction reference exists', () => {
+  expectMessage('DEPLOY_REFERENCE_UNAVAILABLE', () => finalizedTransactionReference({
+    txHash: 'bad',
+    txId: 'also-bad',
+    identifiers: ['bad-too'],
+  }, 'DEPLOY'));
 });
 
 await test('release gate accepts finalized 33-byte Preview transaction identifier', () => {
