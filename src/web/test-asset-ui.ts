@@ -108,7 +108,7 @@ function renderPanel(): string {
       </div>` : ''}
       ${message ? `<div class="notice ${messageType === 'error' ? 'danger' : ''}" style="margin-top:16px"><strong>${messageType === 'error' ? 'Test asset error' : 'Test asset status'}</strong><span>${escapeHtml(message)}</span></div>` : ''}
       <div class="form-footer">
-        <p>This faucet token has no value and is intentionally unlimited for Midnight Preview testing. No mainnet path exists.</p>
+        <p>This faucet token has no value and is mintable only for Midnight Preview testing. It is not a production asset.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
           ${manifest?.color ? '<button class="secondary-button" data-test-asset-action="use-deposit">Use for deposit</button>' : ''}
           ${manifest ? '<button class="secondary-button" data-test-asset-action="download">Download manifest</button>' : ''}
@@ -122,7 +122,7 @@ function renderPanel(): string {
 function mountPanel(): void {
   if (location.hash !== '#/assets') return;
   if (document.getElementById('blackout-test-asset-panel')) return;
-  const content = document.querySelector<HTMLElement>('.product-content');
+  const content = document.getElementsByClassName('product-content').item(0) as HTMLElement | null;
   if (!content) return;
   const template = document.createElement('template');
   template.innerHTML = renderPanel().trim();
