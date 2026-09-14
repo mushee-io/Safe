@@ -9,7 +9,7 @@ import { buildBlackoutSafeProviders, safeMidnightError } from './providers.ts';
 import {
   assertCircuitArity,
   assertContractAddress,
-  assertTransactionId,
+  finalizedTransactionReference,
   resolvePinnedAssetBaseUrl,
 } from './security-hardening.ts';
 import { getActiveSafeLaceSession, type SafeLaceSession } from './wallet-session.ts';
@@ -167,16 +167,17 @@ export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
       ],
     } as any);
 
+    const publicData = deployed.deployTxData.public;
     return {
       contractAddress: assertContractAddress(
-        String(deployed.deployTxData.public.contractAddress),
+        String(publicData.contractAddress),
         'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS',
       ),
-      txId: assertTransactionId(
-        String(deployed.deployTxData.public.txId),
-        'BLACKOUT_SAFE_INVALID_DEPLOYMENT_TX_ID',
-      ),
-      blockHeight: safeBlockHeight(deployed.deployTxData.public.blockHeight),
+      // Midnight finalized data exposes txHash as the canonical 32-byte ledger
+      // reference. Prefer it over txId so 1AM/Lace identifier encodings cannot
+      // invalidate an otherwise finalized deployment.
+      txId: finalizedTransactionReference(publicData, 'BLACKOUT_SAFE_DEPLOYMENT_TRANSACTION'),
+      blockHeight: safeBlockHeight(publicData.blockHeight),
       networkId: 'preview' as const,
     };
   } catch (error) {
@@ -202,7 +203,7 @@ export async function submitBlackoutSafeCall(input: SubmitBlackoutSafeCallInput)
     } as any);
 
     return {
-      txId: assertTransactionId(String(result.public.txId), 'BLACKOUT_SAFE_INVALID_CALL_TX_ID'),
+      txId: finalizedTransactionReference(result.public, `BLACKOUT_SAFE_${input.circuitId.toUpperCase()}_TRANSACTION`),
       blockHeight: safeBlockHeight(result.public.blockHeight),
       circuitId: input.circuitId,
       networkId: 'preview' as const,
