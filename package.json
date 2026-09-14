@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20 && npm run test:witnesses && npm run test:hardening && npm run test:wallet-compat && npm run test:web-encoding && npm run test:web-security",
+    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20 && npm run test:witnesses && npm run test:hardening && npm run test:wallet-compat && npm run test:tx-id && npm run test:web-encoding && npm run test:web-security",
     "test:m1-5": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
     "test:m6-10": "node --experimental-strip-types src/safe/milestones-6-10.test.ts",
     "test:m10-15": "node --experimental-strip-types src/safe/milestones-10-15.test.ts",
@@ -13,6 +13,7 @@
     "test:witnesses": "node --experimental-strip-types src/safe/midnight-witnesses.test.ts",
     "test:hardening": "node --experimental-strip-types src/safe/security-hardening.test.ts",
     "test:wallet-compat": "node --experimental-strip-types src/safe/wallet-compat.test.ts",
+    "test:tx-id": "node --experimental-strip-types src/safe/midnight-transaction-id.test.ts",
     "test:web-encoding": "node --experimental-strip-types src/safe/live-encoding.test.ts",
     "test:web-security": "node scripts/web-security.test.mjs",
     "typecheck": "tsc -p tsconfig.safe.json --noEmit",

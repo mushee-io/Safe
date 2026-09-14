@@ -5,6 +5,14 @@ export function isHex64(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 }
 
+/**
+ * Midnight APIs can surface either a 32-byte transaction hash or a 33-byte
+ * transaction identifier. Both are valid public transaction references.
+ */
+export function isMidnightTransactionIdentifier(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[0-9a-f]{64}|[0-9a-f]{66})$/i.test(value);
+}
+
 function normalizedHexIdentifier(value: unknown, stripContractPrefix: boolean): string {
   if (typeof value !== 'string') return '';
   let normalized = value.trim().toLowerCase().replace(/^0x/, '');
@@ -12,10 +20,17 @@ function normalizedHexIdentifier(value: unknown, stripContractPrefix: boolean): 
   return normalized;
 }
 
-/** Canonical Midnight transaction identifier: raw 32-byte lower-case hex. */
+/**
+ * Canonical Midnight transaction reference. Midnight.js finalized transaction
+ * data may expose a 32-byte transaction hash (64 hex chars) or a 33-byte
+ * transaction identifier (66 hex chars). Preserve the identifier byte when it
+ * is present; it is meaningful to the indexer and must not be stripped.
+ */
 export function assertTransactionId(value: unknown, label: string): string {
   const normalized = normalizedHexIdentifier(value, false);
-  if (!isHex64(normalized)) throw new Error(`${label}_MUST_BE_64_HEX`);
+  // Keep the historic error code stable for callers while accepting the
+  // official 33-byte identifier shape returned by Midnight APIs.
+  if (!isMidnightTransactionIdentifier(normalized)) throw new Error(`${label}_MUST_BE_64_HEX`);
   return normalized;
 }
 

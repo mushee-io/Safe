@@ -31,6 +31,8 @@ export interface BlackoutSafeReleaseGate {
 }
 
 const isHex64 = (value: string | undefined): boolean => !!value && /^[0-9a-f]{64}$/i.test(value);
+const isMidnightTxIdentifier = (value: string | undefined): boolean =>
+  !!value && /^(?:[0-9a-f]{64}|[0-9a-f]{66})$/i.test(value);
 
 /**
  * Fail-closed release gate. Production is intentionally never auto-approved:
@@ -55,7 +57,8 @@ export function evaluateBlackoutSafeRelease(evidence: BlackoutSafeReleaseEvidenc
     };
   }
 
-  const identifiersPresent = isHex64(evidence.previewDeploymentTxId) && isHex64(evidence.previewContractAddress);
+  const identifiersPresent =
+    isMidnightTxIdentifier(evidence.previewDeploymentTxId) && isHex64(evidence.previewContractAddress);
   const networkVerified =
     identifiersPresent &&
     evidence.previewDeploymentNetworkId === 'preview' &&
