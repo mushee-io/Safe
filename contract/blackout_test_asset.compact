@@ -1,0 +1,33 @@
+// BLACKOUT SAFE — Preview-only shielded test asset
+// Purpose: provide a real shielded coin for end-to-end treasury testing.
+// This is deliberately NOT a production token and MUST remain Preview-only.
+
+pragma language_version 0.23;
+import CompactStandardLibrary;
+
+export ledger total_supply: Uint<64>;
+
+// Fresh randomness supplied ephemerally by the browser for every mint.
+witness local_nonce(): Bytes<32>;
+
+constructor() {
+  total_supply = 0;
+}
+
+// Open test faucet: anyone able to call the Preview contract may mint.
+// This is intentional for a test asset. Do not reuse this contract on mainnet.
+export circuit mint_test_asset(amount: Uint<64>): ShieldedCoinInfo {
+  assert(amount > 0, "BLACKOUT_TEST_ASSET_AMOUNT_MUST_BE_POSITIVE");
+  assert(amount <= 1000000000000, "BLACKOUT_TEST_ASSET_MINT_LIMIT");
+
+  const nonce = local_nonce();
+  const coin = mintShieldedToken(
+    pad(32, "blackout:safe:test-asset:v1"),
+    disclose(amount),
+    disclose(nonce),
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey())
+  );
+
+  total_supply = (total_supply + disclose(amount)) as Uint<64>;
+  return coin;
+}
