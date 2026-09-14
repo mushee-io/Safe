@@ -36,19 +36,17 @@ async function ensureToolchain() {
 
 async function prepareArtifacts() {
   const safeBinding = resolve('contract/build-safe/contract/index.js');
-  const safeStagedKey = resolve('public/zk-artifacts/blackout-safe/keys/propose_private.prover');
-  const safeStagedReceipt = resolve('public/zk-artifacts/blackout-safe/keys/receipt_statement.prover');
+  const safeStagedDeposit = resolve('public/zk-artifacts/blackout-safe/keys/deposit_shielded.prover');
   const testAssetBinding = resolve('contract/build-test-asset/contract/index.js');
   const testAssetStagedKey = resolve('public/zk-artifacts/blackout-test-asset/keys/mint_test_asset.prover');
 
   if (
     await exists(safeBinding) &&
-    await exists(safeStagedKey) &&
-    await exists(safeStagedReceipt) &&
+    await exists(safeStagedDeposit) &&
     await exists(testAssetBinding) &&
     await exists(testAssetStagedKey)
   ) {
-    console.log('BLACKOUT SAFE: using existing Safe + Preview test-asset artifacts.');
+    console.log('BLACKOUT SAFE: using existing lean browser ZK bundle.');
     return;
   }
 
@@ -69,4 +67,5 @@ async function prepareArtifacts() {
 await prepareArtifacts();
 if (!PREPARE_ONLY) {
   run(process.execPath, ['node_modules/vite/bin/vite.js', 'build']);
+  run(process.execPath, ['scripts/check-web-deployment-size.mjs']);
 }

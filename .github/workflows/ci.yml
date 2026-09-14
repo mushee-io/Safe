@@ -110,10 +110,10 @@ jobs:
           console.log('BLACKOUT TEST ASSET: Compact 0.31.1 build verified');
           NODE
 
-      - name: Stage browser ZK artifacts
+      - name: Stage lean browser ZK artifacts
         run: npm run midnight:assets
 
-      - name: Verify compiler metadata, circuits and ZK artifacts
+      - name: Verify full compiler output and lean browser ZK bundle
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -133,13 +133,17 @@ jobs:
             if (!fs.existsSync(dir) || fs.readdirSync(dir).length === 0) throw new Error(`missing generated artifacts in ${dir}`);
           }
           const staged = 'public/zk-artifacts/blackout-safe';
-          if (!fs.existsSync(`${staged}/keys`) || !fs.existsSync(`${staged}/zkir`)) throw new Error('browser artifacts not staged');
-          if (!fs.existsSync(`${staged}/keys/receipt_statement.prover`)) throw new Error('unified receipt prover not staged');
+          for (const file of ['keys/deposit_shielded.prover','keys/deposit_shielded.verifier','zkir/deposit_shielded.bzkir']) {
+            if (!fs.existsSync(`${staged}/${file}`)) throw new Error(`missing lean Safe browser artifact ${file}`);
+          }
+          for (const forbidden of ['keys/propose_private.prover','keys/receipt_statement.prover','keys/execute_shielded_transfer.prover']) {
+            if (fs.existsSync(`${staged}/${forbidden}`)) throw new Error(`heavy Safe artifact leaked into lean browser bundle: ${forbidden}`);
+          }
           const testAsset = 'public/zk-artifacts/blackout-test-asset';
           for (const file of ['keys/mint_test_asset.prover','keys/mint_test_asset.verifier','zkir/mint_test_asset.bzkir']) {
             if (!fs.existsSync(`${testAsset}/${file}`)) throw new Error(`missing test asset artifact ${file}`);
           }
-          console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} Safe circuits + Preview test asset`);
+          console.log(`BLACKOUT SAFE: full ZK compiler output verified; browser stages only deposit_shielded + mint_test_asset.`);
           NODE
 
       - name: Strict browser TypeScript
@@ -148,20 +152,22 @@ jobs:
       - name: Build Vite frontend
         run: npm run build:web:bundle
 
-      - name: Verify deployable web output
+      - name: Verify lean deployable web output
         run: |
           test -f dist/index.html
-          test -f dist/zk-artifacts/blackout-safe/keys/propose_private.prover
-          test -f dist/zk-artifacts/blackout-safe/zkir/propose_private.bzkir
-          test -f dist/zk-artifacts/blackout-safe/keys/receipt_statement.prover
-          test -f dist/zk-artifacts/blackout-safe/zkir/receipt_statement.bzkir
+          test -f dist/zk-artifacts/blackout-safe/keys/deposit_shielded.prover
+          test -f dist/zk-artifacts/blackout-safe/zkir/deposit_shielded.bzkir
           test -f dist/zk-artifacts/blackout-test-asset/keys/mint_test_asset.prover
           test -f dist/zk-artifacts/blackout-test-asset/zkir/mint_test_asset.bzkir
+          test ! -f dist/zk-artifacts/blackout-safe/keys/propose_private.prover
+          test ! -f dist/zk-artifacts/blackout-safe/keys/receipt_statement.prover
+          test ! -f dist/zk-artifacts/blackout-safe/keys/execute_shielded_transfer.prover
           if find dist -type f -name '*.map' -print -quit | grep -q .; then
             echo "BLACKOUT SAFE: production source maps must not be published"
             exit 1
           fi
-          echo "BLACKOUT SAFE: deployable frontend + Safe/test-asset proving assets verified"
+          node scripts/check-web-deployment-size.mjs
+          echo "BLACKOUT SAFE: lean deployable frontend verified under hard size budget"
 
       - name: Upload generated Safe artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
