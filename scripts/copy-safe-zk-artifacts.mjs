@@ -1,7 +1,7 @@
-import { access, cp, mkdir, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { access, copyFile, mkdir, rm } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 
-const circuits = [
+const fullCircuits = [
   'propose_private',
   'approve_private',
   'prove_quorum',
@@ -15,6 +15,14 @@ const circuits = [
   'receipt_statement',
 ];
 
+// Vercel serves a lean browser bundle by default. The full Compact output is
+// still generated and preserved by CI as a GitHub Actions artifact, but it is
+// not copied into every web deployment. Set BLACKOUT_ZK_BUNDLE=full only for
+// an explicit full-browser build.
+const circuits = process.env.BLACKOUT_ZK_BUNDLE === 'full'
+  ? fullCircuits
+  : ['deposit_shielded'];
+
 const source = resolve('contract/build-safe');
 const destination = resolve('public/zk-artifacts/blackout-safe');
 const required = circuits.flatMap((circuit) => [
@@ -25,10 +33,12 @@ const required = circuits.flatMap((circuit) => [
 
 await Promise.all(required.map((artifact) => access(resolve(source, artifact))));
 await rm(destination, { recursive: true, force: true });
-await mkdir(destination, { recursive: true });
-await Promise.all([
-  cp(resolve(source, 'keys'), resolve(destination, 'keys'), { recursive: true }),
-  cp(resolve(source, 'zkir'), resolve(destination, 'zkir'), { recursive: true }),
-]);
+
+for (const artifact of required) {
+  const target = resolve(destination, artifact);
+  await mkdir(dirname(target), { recursive: true });
+  await copyFile(resolve(source, artifact), target);
+}
+
 await Promise.all(required.map((artifact) => access(resolve(destination, artifact))));
-console.log(`BLACKOUT SAFE: staged ${required.length} ZK artifacts for ${circuits.length} circuits.`);
+console.log(`BLACKOUT SAFE: staged ${required.length} ZK artifacts for ${circuits.length} browser circuit(s): ${circuits.join(', ')}.`);
