@@ -2,8 +2,14 @@ import type { ContractAddress, SigningKey } from '@midnight-ntwrk/midnight-js-pr
 import type { PrivateStateProvider } from '@midnight-ntwrk/midnight-js-types';
 import type { BlackoutSafePrivateState } from './compiled-safe-contract.ts';
 
-/** Dedicated namespace. Never reuse the income-verifier private-state ID. */
+/** Dedicated namespaces. Never reuse the income-verifier private-state ID. */
 export const BLACKOUT_SAFE_PRIVATE_STATE_ID = 'blackout-safe-session-v1';
+export const BLACKOUT_TEST_ASSET_PRIVATE_STATE_ID = 'blackout-safe-test-asset-v1';
+
+const EMPTY_PRIVATE_STATE_IDS = new Set([
+  BLACKOUT_SAFE_PRIVATE_STATE_ID,
+  BLACKOUT_TEST_ASSET_PRIVATE_STATE_ID,
+]);
 
 type SafePrivateStateProvider = PrivateStateProvider<string, BlackoutSafePrivateState>;
 
@@ -35,7 +41,7 @@ function buildProviderRecord(): ScopedProviderRecord {
       const key = scopedKey(id);
       const existing = states.get(key);
       if (existing !== undefined) return existing;
-      if (id === BLACKOUT_SAFE_PRIVATE_STATE_ID) {
+      if (EMPTY_PRIVATE_STATE_IDS.has(id)) {
         const initialState: BlackoutSafePrivateState = {};
         states.set(key, initialState);
         return initialState;
