@@ -1,1 +1,0 @@
-BLACKOUT SAFE runtime accepts only the two same-origin ZK roots used by the Safe and its Preview-only shielded test asset. Arbitrary ZK paths remain fail-closed.
