@@ -38,13 +38,19 @@ export function safeMidnightError(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function buildBlackoutSafeProviders(session: SafeLaceSession) {
+export async function buildBlackoutSafeProviders(
+  session: SafeLaceSession,
+  options: { zkAssetPath?: string } = {},
+) {
   await revalidateBlackoutSafeLaceSession(session);
   setNetworkId('preview');
 
   if (typeof window === 'undefined') throw new Error('BLACKOUT_SAFE_BROWSER_REQUIRED');
   const { wallet, configuration, addresses } = session;
-  const zkAssetBaseUrl = resolvePinnedAssetBaseUrl(BLACKOUT_SAFE_ZK_ASSET_PATH, window.location.origin);
+  const zkAssetBaseUrl = resolvePinnedAssetBaseUrl(
+    options.zkAssetPath ?? BLACKOUT_SAFE_ZK_ASSET_PATH,
+    window.location.origin,
+  );
   const zkConfigProvider = new FetchZkConfigProvider(zkAssetBaseUrl, fetch.bind(window));
   const provingProvider = await wallet.getProvingProvider(zkConfigProvider.asKeyMaterialProvider());
   if (!provingProvider) throw new Error('BLACKOUT_SAFE_PROVING_PROVIDER_EMPTY');
