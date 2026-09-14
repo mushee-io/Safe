@@ -6,6 +6,7 @@ import {
 import { getActiveSafeLaceSession } from '../safe/midnight/wallet-session.ts';
 
 const STORAGE_KEY = 'blackout-safe:test-asset-manifest:v1';
+const PENDING_DEPOSIT_KEY = 'blackout-safe:pending-deposit:v1';
 const DEFAULT_MINT_AMOUNT = 1_000_000n;
 const DEFAULT_DEPOSIT_AMOUNT = 100_000n;
 
@@ -20,6 +21,15 @@ interface TestAssetManifest {
   lastMintBlockHeight?: number;
   lastMintAmount?: string;
   mintedAt?: string;
+}
+
+interface PendingDeposit {
+  version: 1;
+  networkId: 'preview';
+  contractAddress: string;
+  color: string;
+  value: string;
+  preparedAt: string;
 }
 
 let busy = false;
@@ -54,6 +64,20 @@ function loadManifest(): TestAssetManifest | null {
 
 function saveManifest(manifest: TestAssetManifest): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(manifest));
+}
+
+function savePendingDeposit(manifest: TestAssetManifest): PendingDeposit {
+  if (!manifest.color) throw new Error('BLACKOUT_TEST_ASSET_COLOR_REQUIRED');
+  const pending: PendingDeposit = {
+    version: 1,
+    networkId: 'preview',
+    contractAddress: manifest.contractAddress,
+    color: manifest.color,
+    value: DEFAULT_DEPOSIT_AMOUNT.toString(),
+    preparedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(PENDING_DEPOSIT_KEY, JSON.stringify(pending));
+  return pending;
 }
 
 function publicDeployment(deployment: BlackoutTestAssetDeployment): TestAssetManifest {
@@ -196,17 +220,14 @@ function fillDeposit(): void {
     rerenderPanel();
     return;
   }
+
+  const pending = savePendingDeposit(manifest);
   const color = document.getElementById('deposit-color') as HTMLInputElement | null;
   const value = document.getElementById('deposit-value') as HTMLInputElement | null;
-  if (!color || !value) {
-    message = 'Deposit form is not available on this screen.';
-    messageType = 'error';
-    rerenderPanel();
-    return;
-  }
-  color.value = manifest.color;
-  value.value = DEFAULT_DEPOSIT_AMOUNT.toString();
-  message = `Deposit form filled with the real token color and ${DEFAULT_DEPOSIT_AMOUNT.toString()} base units.`;
+  if (color) color.value = pending.color;
+  if (value) value.value = pending.value;
+
+  message = `Deposit prepared with the real token color and ${pending.value} base units. The selection is now persisted until a real deposit succeeds.`;
   messageType = 'success';
   rerenderPanel();
 }
