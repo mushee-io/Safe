@@ -1,5 +1,5 @@
-import { access, cp, mkdir, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { access, copyFile, mkdir, rm } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 
 const circuits = ['mint_test_asset'];
 const source = resolve('contract/build-test-asset');
@@ -12,10 +12,12 @@ const required = circuits.flatMap((circuit) => [
 
 await Promise.all(required.map((artifact) => access(resolve(source, artifact))));
 await rm(destination, { recursive: true, force: true });
-await mkdir(destination, { recursive: true });
-await Promise.all([
-  cp(resolve(source, 'keys'), resolve(destination, 'keys'), { recursive: true }),
-  cp(resolve(source, 'zkir'), resolve(destination, 'zkir'), { recursive: true }),
-]);
+
+for (const artifact of required) {
+  const target = resolve(destination, artifact);
+  await mkdir(dirname(target), { recursive: true });
+  await copyFile(resolve(source, artifact), target);
+}
+
 await Promise.all(required.map((artifact) => access(resolve(destination, artifact))));
-console.log(`BLACKOUT TEST ASSET: staged ${required.length} ZK artifacts for ${circuits.length} circuit.`);
+console.log(`BLACKOUT TEST ASSET: staged only the ${required.length} required browser ZK files for ${circuits[0]}.`);
