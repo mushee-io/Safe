@@ -73,6 +73,12 @@ jobs:
           .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.preview.compact contract/build-safe
           test -f contract/build-safe/contract/index.js
 
+      - name: Generate Preview test asset bindings
+        run: |
+          rm -rf contract/build-test-asset
+          .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_test_asset.compact contract/build-test-asset
+          test -f contract/build-test-asset/contract/index.js
+
       - name: Protocol and adversarial tests
         run: npm test
 
@@ -87,6 +93,22 @@ jobs:
 
       - name: Enforce Preview deployment footprint
         run: node scripts/check-deployment-footprint.mjs
+
+      - name: Compile Preview shielded test asset
+        run: |
+          rm -rf contract/build-test-asset
+          .blackout-toolchain/bin/compact compile contract/blackout_test_asset.compact contract/build-test-asset
+          test -f contract/build-test-asset/compiler/contract-info.json
+          node - <<'NODE'
+          const info = require('./contract/build-test-asset/compiler/contract-info.json');
+          if (info['compiler-version'] !== '0.31.1') throw new Error(`wrong compiler ${info['compiler-version']}`);
+          if (info['language-version'] !== '0.23.0') throw new Error(`wrong language ${info['language-version']}`);
+          if (info['runtime-version'] !== '0.16.0') throw new Error(`wrong runtime ${info['runtime-version']}`);
+          if (info.circuits.length !== 1 || info.circuits[0].name !== 'mint_test_asset') {
+            throw new Error(`unexpected test asset circuits: ${info.circuits.map((c) => c.name).join(',')}`);
+          }
+          console.log('BLACKOUT TEST ASSET: Compact 0.31.1 build verified');
+          NODE
 
       - name: Stage browser ZK artifacts
         run: npm run midnight:assets
@@ -113,7 +135,11 @@ jobs:
           const staged = 'public/zk-artifacts/blackout-safe';
           if (!fs.existsSync(`${staged}/keys`) || !fs.existsSync(`${staged}/zkir`)) throw new Error('browser artifacts not staged');
           if (!fs.existsSync(`${staged}/keys/receipt_statement.prover`)) throw new Error('unified receipt prover not staged');
-          console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} exported circuits`);
+          const testAsset = 'public/zk-artifacts/blackout-test-asset';
+          for (const file of ['keys/mint_test_asset.prover','keys/mint_test_asset.verifier','zkir/mint_test_asset.bzkir']) {
+            if (!fs.existsSync(`${testAsset}/${file}`)) throw new Error(`missing test asset artifact ${file}`);
+          }
+          console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} Safe circuits + Preview test asset`);
           NODE
 
       - name: Strict browser TypeScript
@@ -129,11 +155,13 @@ jobs:
           test -f dist/zk-artifacts/blackout-safe/zkir/propose_private.bzkir
           test -f dist/zk-artifacts/blackout-safe/keys/receipt_statement.prover
           test -f dist/zk-artifacts/blackout-safe/zkir/receipt_statement.bzkir
+          test -f dist/zk-artifacts/blackout-test-asset/keys/mint_test_asset.prover
+          test -f dist/zk-artifacts/blackout-test-asset/zkir/mint_test_asset.bzkir
           if find dist -type f -name '*.map' -print -quit | grep -q .; then
             echo "BLACKOUT SAFE: production source maps must not be published"
             exit 1
           fi
-          echo "BLACKOUT SAFE: deployable frontend + proving assets verified"
+          echo "BLACKOUT SAFE: deployable frontend + Safe/test-asset proving assets verified"
 
       - name: Upload generated Safe artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -146,3 +174,7 @@ jobs:
             contract/build-safe/compiler/contract-info.json
             contract/build-safe/keys
             contract/build-safe/zkir
+            contract/build-test-asset/contract
+            contract/build-test-asset/compiler/contract-info.json
+            contract/build-test-asset/keys
+            contract/build-test-asset/zkir
