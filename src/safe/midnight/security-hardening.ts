@@ -34,6 +34,48 @@ export function assertTransactionId(value: unknown, label: string): string {
   return normalized;
 }
 
+export interface FinalizedMidnightTxPublicDataLike {
+  txHash?: unknown;
+  txId?: unknown;
+  identifiers?: unknown;
+}
+
+/**
+ * Return the most stable public reference from finalized Midnight transaction
+ * data. The 32-byte ledger txHash is preferred because it is canonical for
+ * explorers and does not carry the action/identifier tag used by some SDK
+ * transaction IDs. Older/different SDK surfaces are supported as fail-closed
+ * fallbacks instead of assuming a single txId encoding.
+ */
+export function finalizedTransactionReference(
+  publicData: FinalizedMidnightTxPublicDataLike | null | undefined,
+  label: string,
+): string {
+  if (!publicData || typeof publicData !== 'object') {
+    throw new Error(`${label}_PUBLIC_DATA_MISSING`);
+  }
+
+  const txHash = normalizedHexIdentifier(publicData.txHash, false);
+  if (isHex64(txHash)) return txHash;
+
+  const txId = normalizedHexIdentifier(publicData.txId, false);
+  if (isMidnightTransactionIdentifier(txId)) return txId;
+
+  if (Array.isArray(publicData.identifiers)) {
+    // Prefer a plain 32-byte hash-shaped reference when one is available.
+    for (const candidate of publicData.identifiers) {
+      const normalized = normalizedHexIdentifier(candidate, false);
+      if (isHex64(normalized)) return normalized;
+    }
+    for (const candidate of publicData.identifiers) {
+      const normalized = normalizedHexIdentifier(candidate, false);
+      if (isMidnightTransactionIdentifier(normalized)) return normalized;
+    }
+  }
+
+  throw new Error(`${label}_REFERENCE_UNAVAILABLE`);
+}
+
 /**
  * Canonical Midnight contract address: raw 32-byte lower-case hex. Midnight
  * tooling may surface the same address as `0x...` or with an `0200` prefix;
