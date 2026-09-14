@@ -19,15 +19,28 @@ const fromHex = (value: string): Uint8Array => {
   return new Uint8Array(hex.match(/.{2}/g)!.map((byte) => Number.parseInt(byte, 16)));
 };
 
+function isGenericRequestFailure(message: string): boolean {
+  return /^(?:request|fetch|network request|network) failed$/i.test(message.trim());
+}
+
 export function safeMidnightError(error: unknown, fallback: string): string {
   if (typeof error === 'string') return sanitizeMidnightErrorMessage(error, fallback);
   if (error instanceof Error) {
-    if (error.message?.trim()) return sanitizeMidnightErrorMessage(error.message, fallback);
+    const message = error.message?.trim() ?? '';
+    if (error.cause && error.cause !== error && (!message || isGenericRequestFailure(message))) {
+      const nested = safeMidnightError(error.cause, fallback);
+      if (nested !== fallback) return nested;
+    }
+    if (message) return sanitizeMidnightErrorMessage(message, fallback);
     if (error.cause && error.cause !== error) return safeMidnightError(error.cause, fallback);
     if (error.name && error.name !== 'Error') return sanitizeMidnightErrorMessage(error.name, fallback);
   }
   if (error && typeof error === 'object') {
     const value = error as Record<string, unknown>;
+    if (value.cause && value.cause !== error) {
+      const nested = safeMidnightError(value.cause, fallback);
+      if (nested !== fallback) return nested;
+    }
     for (const field of ['reason', 'message', 'code', 'type', '_tag', 'name']) {
       const candidate = value[field];
       if (typeof candidate === 'string' && candidate.trim()) {
