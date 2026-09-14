@@ -28,9 +28,9 @@ function normalizedHexIdentifier(value: unknown, stripContractPrefix: boolean): 
  */
 export function assertTransactionId(value: unknown, label: string): string {
   const normalized = normalizedHexIdentifier(value, false);
-  if (!isMidnightTransactionIdentifier(normalized)) {
-    throw new Error(`${label}_MUST_BE_64_OR_66_HEX`);
-  }
+  // Keep the historic error code stable for callers while accepting the
+  // official 33-byte identifier shape returned by Midnight APIs.
+  if (!isMidnightTransactionIdentifier(normalized)) throw new Error(`${label}_MUST_BE_64_HEX`);
   return normalized;
 }
 
