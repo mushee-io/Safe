@@ -4,7 +4,9 @@ import type { Hex32String } from '../safe/midnight/live-encoding.ts';
 const SAFE_KEY = 'blackout-safe:public-safe:v1';
 const ACTIVITY_KEY = 'blackout-safe:public-activity:v1';
 const PENDING_DEPOSIT_KEY = 'blackout-safe:pending-deposit:v1';
+const TEST_ASSET_STORAGE_KEY = 'blackout-safe:test-asset-manifest:v1';
 const ZERO32 = `0x${'0'.repeat(64)}`;
+const DEFAULT_TEST_ASSET_DEPOSIT_AMOUNT = 100_000n;
 
 interface PendingDeposit {
   version: 1;
@@ -13,6 +15,19 @@ interface PendingDeposit {
   color: string;
   value: string;
   preparedAt: string;
+}
+
+interface TestAssetManifest {
+  version: 1;
+  networkId: 'preview';
+  contractAddress: string;
+  deploymentTxId: string;
+  deploymentBlockHeight: number;
+  color?: string;
+  lastMintTxId?: string;
+  lastMintBlockHeight?: number;
+  lastMintAmount?: string;
+  mintedAt?: string;
 }
 
 let submitting = false;
@@ -27,18 +42,57 @@ function loadSafe(): PublicSafeRecord {
   return safe;
 }
 
+function isValidColor(value: string): boolean {
+  return /^(?:0x)?[0-9a-fA-F]{64}$/.test(value) && value.toLowerCase() !== ZERO32.toLowerCase();
+}
+
+function isValidPositiveInteger(value: string): boolean {
+  return /^\d+$/.test(value) && BigInt(value) > 0n;
+}
+
 function loadPendingDeposit(): PendingDeposit | null {
   try {
     const raw = localStorage.getItem(PENDING_DEPOSIT_KEY);
     if (!raw) return null;
     const pending = JSON.parse(raw) as PendingDeposit;
     if (pending?.version !== 1 || pending.networkId !== 'preview') return null;
-    if (!/^(?:0x)?[0-9a-fA-F]{64}$/.test(pending.color)) return null;
-    if (!/^\d+$/.test(pending.value) || BigInt(pending.value) <= 0n) return null;
+    if (!isValidColor(pending.color)) return null;
+    if (!isValidPositiveInteger(pending.value)) return null;
     return pending;
   } catch {
     return null;
   }
+}
+
+function loadRealMintedTestAsset(): TestAssetManifest | null {
+  try {
+    const raw = localStorage.getItem(TEST_ASSET_STORAGE_KEY);
+    if (!raw) return null;
+    const manifest = JSON.parse(raw) as TestAssetManifest;
+    if (manifest?.version !== 1 || manifest.networkId !== 'preview') return null;
+    if (!manifest.contractAddress || !manifest.deploymentTxId) return null;
+    if (!manifest.lastMintTxId || manifest.lastMintBlockHeight === undefined) return null;
+    if (!manifest.color || !isValidColor(manifest.color)) return null;
+    return manifest;
+  } catch {
+    return null;
+  }
+}
+
+function persistManifestDeposit(manifest: TestAssetManifest): PendingDeposit {
+  if (!manifest.color || !isValidColor(manifest.color)) {
+    throw new Error('BLACKOUT_SAFE_DEPOSIT_REAL_TEST_ASSET_COLOR_REQUIRED');
+  }
+  const pending: PendingDeposit = {
+    version: 1,
+    networkId: 'preview',
+    contractAddress: manifest.contractAddress,
+    color: manifest.color,
+    value: DEFAULT_TEST_ASSET_DEPOSIT_AMOUNT.toString(),
+    preparedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(PENDING_DEPOSIT_KEY, JSON.stringify(pending));
+  return pending;
 }
 
 function recordActivity(txId: string, blockHeight: number): void {
@@ -79,17 +133,13 @@ function setStatus(button: HTMLElement, message: string, error = false): void {
   node.textContent = message;
 }
 
-function isValidColor(value: string): boolean {
-  return /^(?:0x)?[0-9a-fA-F]{64}$/.test(value) && value.toLowerCase() !== ZERO32.toLowerCase();
-}
-
-function isValidPositiveInteger(value: string): boolean {
-  return /^\d+$/.test(value) && BigInt(value) > 0n;
-}
-
 function hydratePendingDeposit(): void {
   if (location.hash !== '#/assets') return;
-  const pending = loadPendingDeposit();
+  let pending = loadPendingDeposit();
+  if (!pending) {
+    const manifest = loadRealMintedTestAsset();
+    if (manifest) pending = persistManifestDeposit(manifest);
+  }
   if (!pending) return;
 
   const colorInput = document.getElementById('deposit-color') as HTMLInputElement | null;
@@ -102,7 +152,7 @@ function hydratePendingDeposit(): void {
   if (!isValidPositiveInteger(currentValue)) valueInput.value = pending.value;
 }
 
-function readDepositForm(): { color: Hex32String; value: bigint } {
+function readDepositForm(): { color: Hex32String; value: bigint; source: 'form' | 'pending' | 'manifest' } {
   const colorInput = document.getElementById('deposit-color') as HTMLInputElement | null;
   const valueInput = document.getElementById('deposit-value') as HTMLInputElement | null;
   if (!colorInput || !valueInput) throw new Error('BLACKOUT_SAFE_DEPOSIT_FORM_MISSING');
@@ -110,14 +160,29 @@ function readDepositForm(): { color: Hex32String; value: bigint } {
   const color = colorInput.value.trim();
   const valueText = valueInput.value.trim();
   if (isValidColor(color) && isValidPositiveInteger(valueText)) {
-    return { color: color as Hex32String, value: BigInt(valueText) };
+    return { color: color as Hex32String, value: BigInt(valueText), source: 'form' };
   }
 
   const pending = loadPendingDeposit();
   if (pending) {
     colorInput.value = pending.color;
     valueInput.value = pending.value;
-    return { color: pending.color as Hex32String, value: BigInt(pending.value) };
+    return { color: pending.color as Hex32String, value: BigInt(pending.value), source: 'pending' };
+  }
+
+  // Final Preview-test fallback: derive only from the real, successfully minted
+  // test-asset manifest. This avoids depending on transient DOM state while still
+  // refusing to invent a color or submit a simulated transaction.
+  const manifest = loadRealMintedTestAsset();
+  if (manifest) {
+    const recovered = persistManifestDeposit(manifest);
+    colorInput.value = recovered.color;
+    valueInput.value = recovered.value;
+    return {
+      color: recovered.color as Hex32String,
+      value: BigInt(recovered.value),
+      source: 'manifest',
+    };
   }
 
   if (!/^(?:0x)?[0-9a-fA-F]{64}$/.test(color)) {
@@ -131,7 +196,7 @@ function readDepositForm(): { color: Hex32String; value: bigint } {
   }
   const value = BigInt(valueText);
   if (value <= 0n) throw new Error('BLACKOUT_SAFE_DEPOSIT_VALUE_MUST_BE_POSITIVE');
-  return { color: color as Hex32String, value };
+  return { color: color as Hex32String, value, source: 'form' };
 }
 
 async function submitDeposit(button: HTMLElement): Promise<void> {
@@ -139,11 +204,14 @@ async function submitDeposit(button: HTMLElement): Promise<void> {
   submitting = true;
   const originalText = button.textContent ?? 'Deposit';
   try {
-    const { color, value } = readDepositForm();
+    const { color, value, source } = readDepositForm();
     const safe = loadSafe();
     button.setAttribute('disabled', 'true');
     button.textContent = 'Submitting…';
-    setStatus(button, `Submitting ${value.toString()} shielded base units to BLACKOUT SAFE…`);
+    setStatus(
+      button,
+      `Submitting ${value.toString()} shielded base units to BLACKOUT SAFE${source === 'manifest' ? ' using the real minted test-asset manifest' : ''}…`,
+    );
 
     const result = await depositShielded(safe, color, value);
     recordActivity(result.txId, result.blockHeight);
@@ -161,8 +229,8 @@ async function submitDeposit(button: HTMLElement): Promise<void> {
 }
 
 // Capture deposit before the product shell can enter a busy-state render. If the
-// form was reset by any render, recover the exact persisted selection prepared
-// by “Use for deposit” instead of guessing or inventing a token/value.
+// form was reset, recover from the persisted selection or, as a final Preview
+// test path, from the real successfully minted test-asset manifest.
 document.addEventListener('click', (event) => {
   const target = (event.target as Element | null)?.closest<HTMLElement>('[data-action="deposit"]');
   if (!target) return;
