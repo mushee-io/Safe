@@ -1,0 +1,1 @@
+Hotfix changes are intentionally isolated on shielded-test-asset for PR validation.
