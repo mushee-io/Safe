@@ -1,5 +1,9 @@
 const SERIALIZED_SECRETISH_HEX = /\b(?:0x)?[0-9a-f]{128,}\b/gi;
 const URL_CREDENTIALS = /(https?:\/\/)([^\s/@]+):([^\s/@]+)@/gi;
+const PINNED_ZK_ASSET_PATHS = new Set([
+  '/zk-artifacts/blackout-safe',
+  '/zk-artifacts/blackout-test-asset',
+]);
 
 export function isHex64(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
@@ -109,7 +113,7 @@ export function assertSafeEndpointUri(value: string | undefined, kind: 'HTTP' | 
 }
 
 export function resolvePinnedAssetBaseUrl(assetPath: string, origin?: string): string {
-  if (assetPath !== '/zk-artifacts/blackout-safe') {
+  if (!PINNED_ZK_ASSET_PATHS.has(assetPath)) {
     throw new Error('BLACKOUT_SAFE_ZK_ASSET_PATH_NOT_PINNED');
   }
   const runtimeOrigin = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
