@@ -26,12 +26,6 @@ function isRealColor(value: string): boolean {
   return isHex32(value) && value.toLowerCase() !== ZERO32.toLowerCase();
 }
 
-function positiveInteger(value: string): bigint | null {
-  if (!/^\d+$/.test(value)) return null;
-  const parsed = BigInt(value);
-  return parsed > 0n ? parsed : null;
-}
-
 function loadJson<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -41,21 +35,14 @@ function loadJson<T>(key: string): T | null {
   }
 }
 
-function resolveDeposit(): { color: string; value: bigint } {
-  const colorInput = document.getElementById('deposit-color') as HTMLInputElement | null;
-  const valueInput = document.getElementById('deposit-value') as HTMLInputElement | null;
-  const visibleColor = colorInput?.value.trim() ?? '';
-  const visibleValue = positiveInteger(valueInput?.value.trim() ?? '');
-
-  if (isRealColor(visibleColor) && visibleValue) {
-    return { color: visibleColor, value: visibleValue };
-  }
-
+function resolveDirectTestDeposit(): { color: string; value: bigint } {
   const manifest = loadJson<TestAssetManifest>(TEST_ASSET_KEY);
   if (!manifest || manifest.version !== 1 || manifest.networkId !== 'preview' || !manifest.color || !isRealColor(manifest.color)) {
     throw new Error('BLACKOUT_SAFE_REAL_TEST_ASSET_REQUIRED');
   }
 
+  // This Preview test path is intentionally deterministic. Do not read or parse
+  // the transient DOM amount field: app-v2 re-renders that field during actions.
   return { color: manifest.color, value: DEFAULT_TEST_DEPOSIT };
 }
 
@@ -69,10 +56,10 @@ function loadSafe(): SafeRecord {
 
 function statusNode(button: HTMLElement): HTMLElement {
   const surface = button.closest<HTMLElement>('.surface');
-  let node = surface?.querySelector<HTMLElement>('[data-deposit-hard-stop-status]') ?? null;
+  let node = surface?.querySelector<HTMLElement>('[data-deposit-direct-status]') ?? null;
   if (!node) {
     node = document.createElement('div');
-    node.dataset.depositHardStopStatus = 'true';
+    node.dataset.depositDirectStatus = 'true';
     node.className = 'notice';
     node.style.margin = '0 22px 18px';
     const footer = surface?.querySelector('.form-footer');
@@ -102,40 +89,72 @@ function recordActivity(txId: string, blockHeight: number): void {
 
 let submitting = false;
 
-document.addEventListener('click', (event) => {
-  const button = (event.target as Element | null)?.closest<HTMLElement>('[data-action="deposit"]');
-  if (!button) return;
-
-  event.preventDefault();
-  event.stopImmediatePropagation();
-
+async function submitDirectDeposit(button: HTMLElement): Promise<void> {
   if (submitting) return;
   submitting = true;
 
   const originalText = button.textContent ?? 'Deposit';
-  void (async () => {
-    try {
-      const { color, value } = resolveDeposit();
-      const safe = loadSafe();
+  try {
+    const { color, value } = resolveDirectTestDeposit();
+    const safe = loadSafe();
 
-      button.setAttribute('disabled', 'true');
-      button.textContent = 'Submitting…';
-      setStatus(button, `Submitting ${value.toString()} shielded base units to BLACKOUT SAFE…`);
+    button.setAttribute('disabled', 'true');
+    button.textContent = 'Submitting…';
+    setStatus(button, `Direct shielded engine · submitting ${value.toString()} base units…`);
 
-      const { depositShielded } = await import('./runtime.ts');
-      const result = await depositShielded(safe as never, color as never, value);
+    const { depositShielded } = await import('./runtime.ts');
+    const result = await depositShielded(safe as never, color as never, value);
 
-      recordActivity(result.txId, result.blockHeight);
-      localStorage.removeItem(PENDING_DEPOSIT_KEY);
-      setStatus(button, `Deposit submitted. Tx ${result.txId} · block ${result.blockHeight}`);
-      button.textContent = 'Deposited';
-    } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : 'BLACKOUT_SAFE_DEPOSIT_FAILED';
-      setStatus(button, message, true);
-      button.removeAttribute('disabled');
-      button.textContent = originalText;
-    } finally {
-      submitting = false;
-    }
-  })();
+    recordActivity(result.txId, result.blockHeight);
+    localStorage.removeItem(PENDING_DEPOSIT_KEY);
+    setStatus(button, `Deposit submitted. Tx ${result.txId} · block ${result.blockHeight}`);
+    button.textContent = 'Deposited';
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : 'BLACKOUT_SAFE_DEPOSIT_FAILED';
+    setStatus(button, message, true);
+    button.removeAttribute('disabled');
+    button.textContent = originalText;
+  } finally {
+    submitting = false;
+  }
+}
+
+function wireDepositButton(): void {
+  const legacyButtons = document.querySelectorAll<HTMLElement>('[data-action="deposit"]');
+  for (const button of legacyButtons) {
+    // Remove app-v2's action marker entirely so its legacy parser can never see
+    // this click. This avoids BLACKOUT_SAFE_DEPOSIT_VALUE_MUST_BE_INTEGER at source.
+    button.removeAttribute('data-action');
+    button.dataset.depositDirect = 'true';
+    button.setAttribute('type', 'button');
+    button.setAttribute('aria-label', 'Deposit 100000 shielded test-asset base units');
+    button.textContent = 'Deposit';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void submitDirectDeposit(button);
+    });
+    setStatus(button, 'Direct shielded engine ready · 100000 base units');
+  }
+}
+
+// Backup capture guard for the tiny window between an app re-render and the
+// MutationObserver rewiring the newly-created button.
+document.addEventListener('click', (event) => {
+  const button = (event.target as Element | null)?.closest<HTMLElement>('[data-action="deposit"]');
+  if (!button) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  button.removeAttribute('data-action');
+  button.dataset.depositDirect = 'true';
+  void submitDirectDeposit(button);
 }, true);
+
+const observer = new MutationObserver(() => wireDepositButton());
+observer.observe(document.documentElement, { childList: true, subtree: true });
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireDepositButton, { once: true });
+} else {
+  wireDepositButton();
+}
