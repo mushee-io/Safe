@@ -53,10 +53,24 @@ jobs:
           test "$(.blackout-toolchain/bin/compact compile --ledger-version)" = "ledger-8.0.2"
           test "$(.blackout-toolchain/bin/compact compile --runtime-version)" = "0.16.0"
 
+      - name: Generate deploy-sized Preview contract
+        run: |
+          node scripts/prepare-preview-contract.mjs
+          node scripts/publicize-receipt-mode.mjs
+          node scripts/add-stable-client-hash-helpers.mjs
+          test -f contract/blackout_safe.preview.compact
+          grep -q "export circuit receipt_statement" contract/blackout_safe.preview.compact
+          grep -q "const mode = disclose(statement)" contract/blackout_safe.preview.compact
+          grep -q "circuit client_proposal_commitment" contract/blackout_safe.preview.compact
+          if grep -q "export circuit receipt_quorum_authorized" contract/blackout_safe.preview.compact; then
+            echo "BLACKOUT SAFE: legacy receipt export leaked into Preview contract"
+            exit 1
+          fi
+
       - name: Generate Safe bindings for TypeScript tests
         run: |
           rm -rf contract/build-safe
-          .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.compact contract/build-safe
+          .blackout-toolchain/bin/compact compile --skip-zk contract/blackout_safe.preview.compact contract/build-safe
           test -f contract/build-safe/contract/index.js
 
       - name: Protocol and adversarial tests
@@ -68,8 +82,11 @@ jobs:
       - name: Full Compact compile and ZK key generation
         run: |
           rm -rf contract/build-safe
-          .blackout-toolchain/bin/compact compile contract/blackout_safe.compact contract/build-safe
+          .blackout-toolchain/bin/compact compile contract/blackout_safe.preview.compact contract/build-safe
           test -f contract/build-safe/compiler/contract-info.json
+
+      - name: Enforce Preview deployment footprint
+        run: node scripts/check-deployment-footprint.mjs
 
       - name: Stage browser ZK artifacts
         run: npm run midnight:assets
@@ -85,16 +102,17 @@ jobs:
           const required = [
             'propose_private','approve_private','prove_quorum','deposit_shielded','execute_shielded_transfer',
             'governance_pause','governance_resume','governance_cancel_proposal','governance_rotate_membership',
-            'governance_change_policy','receipt_quorum_authorized','receipt_executed_exactly_once',
-            'receipt_disclose_amount','receipt_disclose_recipient','receipt_proposal_cancelled'
+            'governance_change_policy','receipt_statement'
           ];
           const actual = new Set(f.circuits.map((c) => c.name));
+          if (f.circuits.length !== required.length) throw new Error(`unexpected circuit count ${f.circuits.length}`);
           for (const name of required) if (!actual.has(name)) throw new Error(`missing circuit ${name}`);
           for (const dir of ['contract/build-safe/contract','contract/build-safe/zkir','contract/build-safe/keys']) {
             if (!fs.existsSync(dir) || fs.readdirSync(dir).length === 0) throw new Error(`missing generated artifacts in ${dir}`);
           }
           const staged = 'public/zk-artifacts/blackout-safe';
           if (!fs.existsSync(`${staged}/keys`) || !fs.existsSync(`${staged}/zkir`)) throw new Error('browser artifacts not staged');
+          if (!fs.existsSync(`${staged}/keys/receipt_statement.prover`)) throw new Error('unified receipt prover not staged');
           console.log(`BLACKOUT SAFE: full ZK build verified for ${required.length} exported circuits`);
           NODE
 
@@ -109,6 +127,8 @@ jobs:
           test -f dist/index.html
           test -f dist/zk-artifacts/blackout-safe/keys/propose_private.prover
           test -f dist/zk-artifacts/blackout-safe/zkir/propose_private.bzkir
+          test -f dist/zk-artifacts/blackout-safe/keys/receipt_statement.prover
+          test -f dist/zk-artifacts/blackout-safe/zkir/receipt_statement.bzkir
           if find dist -type f -name '*.map' -print -quit | grep -q .; then
             echo "BLACKOUT SAFE: production source maps must not be published"
             exit 1

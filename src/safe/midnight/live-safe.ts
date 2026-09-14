@@ -14,6 +14,13 @@ import {
 } from './security-hardening.ts';
 import { getActiveSafeLaceSession, type SafeLaceSession } from './wallet-session.ts';
 
+export type ReceiptCircuitAlias =
+  | 'receipt_quorum_authorized'
+  | 'receipt_executed_exactly_once'
+  | 'receipt_disclose_amount'
+  | 'receipt_disclose_recipient'
+  | 'receipt_proposal_cancelled';
+
 export type BlackoutSafeCircuitId =
   | 'propose_private'
   | 'approve_private'
@@ -25,11 +32,9 @@ export type BlackoutSafeCircuitId =
   | 'governance_cancel_proposal'
   | 'governance_rotate_membership'
   | 'governance_change_policy'
-  | 'receipt_quorum_authorized'
-  | 'receipt_executed_exactly_once'
-  | 'receipt_disclose_amount'
-  | 'receipt_disclose_recipient'
-  | 'receipt_proposal_cancelled';
+  | ReceiptCircuitAlias;
+
+type RuntimeCircuitId = Exclude<BlackoutSafeCircuitId, ReceiptCircuitAlias> | 'receipt_statement';
 
 const CIRCUIT_ARITY: Readonly<Record<BlackoutSafeCircuitId, number>> = {
   propose_private: 1,
@@ -47,6 +52,14 @@ const CIRCUIT_ARITY: Readonly<Record<BlackoutSafeCircuitId, number>> = {
   receipt_disclose_amount: 1,
   receipt_disclose_recipient: 1,
   receipt_proposal_cancelled: 1,
+};
+
+const RECEIPT_MODE: Readonly<Record<ReceiptCircuitAlias, bigint>> = {
+  receipt_quorum_authorized: 1n,
+  receipt_executed_exactly_once: 2n,
+  receipt_disclose_amount: 3n,
+  receipt_disclose_recipient: 4n,
+  receipt_proposal_cancelled: 5n,
 };
 
 export interface DeployBlackoutSafeInput {
@@ -108,6 +121,20 @@ function pinnedAssetBaseUrl(): string {
   return resolvePinnedAssetBaseUrl(BLACKOUT_SAFE_ZK_ASSET_PATH, window.location.origin);
 }
 
+function isReceiptAlias(value: BlackoutSafeCircuitId): value is ReceiptCircuitAlias {
+  return value in RECEIPT_MODE;
+}
+
+function runtimeCall(input: SubmitBlackoutSafeCallInput): { circuitId: RuntimeCircuitId; args: unknown[] } {
+  if (!isReceiptAlias(input.circuitId)) {
+    return { circuitId: input.circuitId, args: [...input.args] };
+  }
+  return {
+    circuitId: 'receipt_statement',
+    args: [RECEIPT_MODE[input.circuitId], ...input.args],
+  };
+}
+
 export async function deployBlackoutSafe(input: DeployBlackoutSafeInput) {
   require32('BLACKOUT_SAFE_SAFE_ID', input.safeId);
   require32('BLACKOUT_SAFE_POLICY_COMMITMENT', input.policyCommitment);
@@ -161,6 +188,7 @@ export async function submitBlackoutSafeCall(input: SubmitBlackoutSafeCallInput)
   const contractAddress = assertContractAddress(input.contractAddress, 'BLACKOUT_SAFE_INVALID_CONTRACT_ADDRESS');
   assertCircuitArity(input.circuitId, input.args, CIRCUIT_ARITY);
   const session = requireSession(input.session);
+  const call = runtimeCall(input);
   try {
     const assetBaseUrl = pinnedAssetBaseUrl();
     const providers = await buildBlackoutSafeProviders(session);
@@ -168,8 +196,8 @@ export async function submitBlackoutSafeCall(input: SubmitBlackoutSafeCallInput)
     const result = await submitCallTx(providers as any, {
       compiledContract,
       contractAddress,
-      circuitId: input.circuitId,
-      args: [...input.args],
+      circuitId: call.circuitId,
+      args: call.args,
       privateStateId: BLACKOUT_SAFE_PRIVATE_STATE_ID,
     } as any);
 
