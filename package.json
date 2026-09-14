@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20 && npm run test:witnesses && npm run test:hardening && npm run test:wallet-compat && npm run test:tx-id && npm run test:zk-path && npm run test:web-encoding && npm run test:web-security && npm run test:test-asset-security",
+    "test": "npm run test:m1-5 && npm run test:m6-10 && npm run test:m10-15 && npm run test:proposal-privacy && npm run test:m15-20 && npm run test:witnesses && npm run test:hardening && npm run test:wallet-compat && npm run test:tx-id && npm run test:zk-path && npm run test:web-encoding && npm run test:web-security && npm run test:test-asset-security && npm run test:provider-errors",
     "test:m1-5": "node --experimental-strip-types src/safe/blackout-safe.test.ts",
     "test:m6-10": "node --experimental-strip-types src/safe/milestones-6-10.test.ts",
     "test:m10-15": "node --experimental-strip-types src/safe/milestones-10-15.test.ts",
@@ -18,6 +18,7 @@
     "test:web-encoding": "node --experimental-strip-types src/safe/live-encoding.test.ts",
     "test:web-security": "node scripts/web-security.test.mjs",
     "test:test-asset-security": "node scripts/test-asset-security.test.mjs",
+    "test:provider-errors": "node scripts/test-provider-errors.test.mjs",
     "typecheck": "tsc -p tsconfig.safe.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
     "midnight:assets": "node scripts/copy-safe-zk-artifacts.mjs && node scripts/copy-test-asset-zk-artifacts.mjs",
