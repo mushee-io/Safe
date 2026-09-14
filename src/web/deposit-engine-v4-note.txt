@@ -1,1 +1,0 @@
-BLACKOUT SAFE deposit engine v4: load-order hardening active.
