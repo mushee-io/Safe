@@ -45,8 +45,8 @@ await test('TXID accepts Midnight 33-byte transaction identifier without strippi
 });
 
 await test('TXID rejects malformed lengths and contract-address prefixes', () => {
-  expectMessage('TX_MUST_BE_64_OR_66_HEX', () => assertTransactionId('ab'.repeat(31), 'TX'));
-  expectMessage('TX_MUST_BE_64_OR_66_HEX', () => assertTransactionId(`0200${'ab'.repeat(32)}`, 'TX'));
+  expectMessage('TX_MUST_BE_64_HEX', () => assertTransactionId('ab'.repeat(31), 'TX'));
+  expectMessage('TX_MUST_BE_64_HEX', () => assertTransactionId(`0200${'ab'.repeat(32)}`, 'TX'));
 });
 
 await test('release gate accepts finalized 33-byte Preview transaction identifier', () => {
