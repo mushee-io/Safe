@@ -1,3 +1,5 @@
+export {};
+
 const SAFE_KEY = 'blackout-safe:public-safe:v1';
 const ACTIVITY_KEY = 'blackout-safe:public-activity:v1';
 const TEST_ASSET_KEY = 'blackout-safe:test-asset-manifest:v1';
@@ -104,7 +106,6 @@ document.addEventListener('click', (event) => {
   const button = (event.target as Element | null)?.closest<HTMLElement>('[data-action="deposit"]');
   if (!button) return;
 
-  // Own the deposit click before app-v2 can enter runBusy() and re-render the form.
   event.preventDefault();
   event.stopImmediatePropagation();
 
